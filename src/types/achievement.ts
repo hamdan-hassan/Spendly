@@ -1,0 +1,50 @@
+/**
+ * Spendly Types — Achievement & Gamification
+ */
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  requiredValue: number;
+  category: AchievementCategory;
+}
+
+export type AchievementCategory = 'tracking' | 'budgeting' | 'saving' | 'milestone';
+
+export interface UserAchievement {
+  achievementId: string;
+  currentValue: number;
+  isUnlocked: boolean;
+  unlockedAt: string | null;
+}
+
+export type UserLevel =
+  | 'beginner_saver'
+  | 'smart_budgeter'
+  | 'finance_explorer'
+  | 'wealth_builder'
+  | 'money_master';
+
+export interface GamificationState {
+  xp: number;
+  level: UserLevel;
+  streaks: {
+    budgetAdherence: number;   // consecutive days under budget
+    dailyLogging: number;       // consecutive days logging expenses
+    lastLogDate: string | null;
+    lastBudgetDate: string | null;
+  };
+  achievements: UserAchievement[];
+}
+
+export interface LevelDefinition {
+  level: UserLevel;
+  name: string;
+  minXP: number;
+  maxXP: number;
+  icon: string;
+  color: string;
+}

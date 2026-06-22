@@ -1,0 +1,13 @@
+/**
+ * Spendly — Global Stylesheet
+ *
+ * Minimal global resets. All styling uses the theme system.
+ */
+
+:root {
+  --bg-primary: #0A0E1A;
+}
+
+* {
+  box-sizing: border-box;
+}
