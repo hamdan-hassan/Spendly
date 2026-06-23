@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withTiming, cancelAnimation, Easing, runOnJS } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useHaptics } from '@/hooks/useHaptics';
@@ -28,6 +28,9 @@ export default function WrappedScreen() {
   const currencySymbol = activeAccount?.currencySymbol || fallbackCurrencySymbol;
 
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const progress = useSharedValue(0);
+  const pressStartTime = useRef(0);
 
   const data = useMemo(() => {
     // Filter to just the active account
@@ -37,18 +40,46 @@ export default function WrappedScreen() {
 
   const totalSlides = 5; // Intro, Numbers, Guilty Pleasure, Persona, Outro
 
+  const advanceSlide = useCallback(() => {
+    setCurrentSlide(prev => {
+      if (prev < totalSlides - 1) {
+        return prev + 1;
+      } else {
+        setTimeout(() => router.back(), 0);
+        return prev;
+      }
+    });
+  }, [totalSlides]);
+
+  const lastSlideAnimated = useRef(-1);
+
   useEffect(() => {
     if (!data) return;
-    const timer = setTimeout(() => {
-      if (currentSlide < totalSlides - 1) {
-        setCurrentSlide(prev => prev + 1);
-      } else {
-        router.back();
-      }
-    }, SLIDE_DURATION);
 
-    return () => clearTimeout(timer);
-  }, [currentSlide, data]);
+    if (isPaused) {
+      cancelAnimation(progress);
+    } else {
+      let isNewSlide = false;
+      if (lastSlideAnimated.current !== currentSlide) {
+        cancelAnimation(progress);
+        progress.value = 0;
+        lastSlideAnimated.current = currentSlide;
+        isNewSlide = true;
+      }
+
+      // If it's a new slide, guarantee the full duration. 
+      // If resuming, calculate based on the current progress value.
+      const remainingTime = isNewSlide ? SLIDE_DURATION : SLIDE_DURATION * (1 - progress.value);
+      
+      if (remainingTime > 0) {
+        progress.value = withTiming(1, { duration: remainingTime, easing: Easing.linear }, (finished) => {
+          if (finished) {
+            runOnJS(advanceSlide)();
+          }
+        });
+      }
+    }
+  }, [isPaused, currentSlide, data, advanceSlide, progress]);
 
   const handleNext = () => {
     haptics.selection();
@@ -65,6 +96,31 @@ export default function WrappedScreen() {
       setCurrentSlide(prev => prev - 1);
     }
   };
+
+  const handlePressIn = () => {
+    setIsPaused(true);
+    pressStartTime.current = Date.now();
+  };
+
+  const handlePressOutLeft = () => {
+    setIsPaused(false);
+    if (Date.now() - pressStartTime.current < 200) {
+      handlePrev();
+    }
+  };
+
+  const handlePressOutRight = () => {
+    setIsPaused(false);
+    if (Date.now() - pressStartTime.current < 200) {
+      handleNext();
+    }
+  };
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      width: `${progress.value * 100}%`,
+    };
+  });
 
   if (!data) {
     return (
@@ -171,8 +227,7 @@ export default function WrappedScreen() {
             {i < currentSlide && <View style={[styles.progressBarFill, { width: '100%' }]} />}
             {i === currentSlide && (
               <Animated.View 
-                entering={FadeIn.duration(SLIDE_DURATION)} 
-                style={[styles.progressBarFill, { width: '100%' }]} 
+                style={[styles.progressBarFill, animatedStyle]} 
               />
             )}
           </View>
@@ -186,8 +241,16 @@ export default function WrappedScreen() {
 
       {/* Touch Zones */}
       <View style={styles.touchZones}>
-        <Pressable style={styles.leftZone} onPress={handlePrev} />
-        <Pressable style={styles.rightZone} onPress={handleNext} />
+        <Pressable 
+          style={styles.leftZone} 
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOutLeft}
+        />
+        <Pressable 
+          style={styles.rightZone} 
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOutRight}
+        />
       </View>
 
       <Pressable onPress={() => router.back()} style={[styles.closeBtn, { top: insets.top + 24 }]}>

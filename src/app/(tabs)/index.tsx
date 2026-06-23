@@ -144,15 +144,14 @@ export default function DashboardScreen() {
         });
 
       const data = [];
-      // Get number of days in the current month
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const daysToDraw = now.getDate();
       
-      for (let i = 1; i <= daysInMonth; i++) {
+      for (let i = 1; i <= daysToDraw; i++) {
         const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
         const amount = dailyMap.get(dateStr) || 0;
         data.push({
           value: amount,
-          label: (i === 1 || i % 5 === 0 || i === daysInMonth) ? String(i) : '',
+          label: (i === 1 || i % 5 === 0 || i === daysToDraw) ? String(i) : '',
           frontColor: amount > 0 ? theme.colors.accent.primary : theme.colors.bg.tertiary,
           gradientColor: theme.colors.accent.primary + '80',
         });
@@ -184,6 +183,7 @@ export default function DashboardScreen() {
   const yAxisFormatter = (label: string) => {
     const val = Number(label);
     if (isNaN(val) || val === 0) return '0';
+    if (val >= 1_000_000_000) return `${Math.round(val / 1_000_000_000)}B`;
     if (val >= 1_000_000) return `${Math.round(val / 1_000_000)}M`;
     if (val >= 1_000) return `${Math.round(val / 1_000)}K`;
     return Math.round(val).toString();
@@ -271,7 +271,7 @@ export default function DashboardScreen() {
               onPress={() => { haptics.light(); router.push(`/wrapped/${currentMonth}` as any); }}
               style={({ pressed }) => [
                 {
-                  backgroundColor: theme.colors.semantic.income,
+                  backgroundColor: theme.colors.accent.primary,
                   borderRadius: 16,
                   padding: 16,
                   flexDirection: 'row',
@@ -279,7 +279,7 @@ export default function DashboardScreen() {
                   justifyContent: 'center',
                   gap: 8,
                   opacity: pressed ? 0.9 : 1,
-                  shadowColor: theme.colors.semantic.income,
+                  shadowColor: theme.colors.accent.primary,
                   shadowOffset: { width: 0, height: 4 },
                   shadowOpacity: 0.3,
                   shadowRadius: 8,
@@ -298,7 +298,7 @@ export default function DashboardScreen() {
         {/* Balance Card */}
         <Animated.View entering={FadeInDown.delay(200).duration(600)}>
           <LinearGradient
-            colors={gradients.brand as [string, string]}
+            colors={[theme.colors.accent.primary, theme.colors.accent.secondary] as [string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.balanceCard}
@@ -618,8 +618,12 @@ export default function DashboardScreen() {
                           {
                             color: isExpense ? theme.colors.semantic.expense : theme.colors.semantic.income,
                             fontFamily: 'Inter_600SemiBold',
+                            maxWidth: '40%',
                           },
                         ]}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.5}
+                        numberOfLines={1}
                       >
                         {isExpense ? '-' : '+'}{formatCurrency(txn.amount, currencySymbol)}
                       </Text>

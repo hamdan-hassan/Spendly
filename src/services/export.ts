@@ -9,6 +9,7 @@ import { StorageAccessFramework } from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Crypto from 'expo-crypto';
 import { Alert, Platform } from 'react-native';
 
 import { useTransactionStore } from '@/store/useTransactionStore';
@@ -30,7 +31,9 @@ export async function exportDataAsJSON() {
     const budgets = useBudgetStore.getState().budgets;
     const goals = useSavingsStore.getState().goals;
     const settings = useSettingsStore.getState();
-    const accounts = useAccountStore.getState().accounts;
+    const accountState = useAccountStore.getState();
+    const accounts = accountState.accounts;
+    const activeAccountId = accountState.activeAccountId;
     const gamification = {
       xp: useGamificationStore.getState().xp,
       level: useGamificationStore.getState().level,
@@ -39,17 +42,26 @@ export async function exportDataAsJSON() {
       purchasedThemes: useGamificationStore.getState().purchasedThemes,
     };
 
+    const rawData = {
+      transactions,
+      budgets,
+      goals,
+      settings,
+      accounts,
+      activeAccountId,
+      gamification,
+    };
+
+    const signature = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      'SpendlySecretSalt_v1_' + JSON.stringify(rawData)
+    );
+
     const exportData = {
       version: '1.0',
       timestamp: new Date().toISOString(),
-      data: {
-        transactions,
-        budgets,
-        goals,
-        settings,
-        accounts,
-        gamification,
-      },
+      signature,
+      data: rawData,
     };
 
     const fileName = `spendly_backup_${new Date().getTime()}.json`;
@@ -57,16 +69,57 @@ export async function exportDataAsJSON() {
 
     await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(exportData, null, 2));
 
-    const isAvailable = await Sharing.isAvailableAsync();
-    if (isAvailable) {
-      await Sharing.shareAsync(fileUri, {
-        mimeType: 'application/json',
-        dialogTitle: 'Export Spendly Data',
-        UTI: 'public.json',
-      });
-    } else {
-      Alert.alert('Sharing Unavailable', 'Sharing is not supported on this device.');
-    }
+    Alert.alert(
+      'Backup Generated',
+      'Would you like to download this JSON backup or share it with others?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Download',
+          onPress: async () => {
+            if (Platform.OS === 'android') {
+              try {
+                const permissions = await StorageAccessFramework.requestDirectoryPermissionsAsync();
+                if (permissions.granted) {
+                  const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
+                  const newUri = await StorageAccessFramework.createFileAsync(permissions.directoryUri, fileName, 'application/json');
+                  await FileSystem.writeAsStringAsync(newUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+                  Alert.alert('Success', 'Backup saved to your device.');
+                }
+              } catch (e) {
+                console.log('Download Error:', e);
+                Alert.alert('Error', 'Failed to save backup.');
+              }
+            } else {
+              const isAvailable = await Sharing.isAvailableAsync();
+              if (isAvailable) {
+                await Sharing.shareAsync(fileUri, {
+                  mimeType: 'application/json',
+                  dialogTitle: 'Save JSON Backup',
+                  UTI: 'public.json',
+                });
+              }
+            }
+          },
+        },
+        {
+          text: 'Share',
+          onPress: async () => {
+            const isAvailable = await Sharing.isAvailableAsync();
+            if (isAvailable) {
+              await Sharing.shareAsync(fileUri, {
+                mimeType: 'application/json',
+                dialogTitle: 'Share JSON Backup',
+                UTI: 'public.json',
+              });
+            } else {
+              Alert.alert('Sharing Unavailable', 'Sharing is not supported on this device.');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   } catch (error) {
     console.error('Error exporting JSON:', error);
     Alert.alert('Export Failed', 'There was an error generating your backup.');
@@ -79,27 +132,46 @@ export async function exportDataAsJSON() {
 export async function importDataFromJSON(): Promise<boolean> {
   try {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/json', '*/*'],
+      type: '*/*',
       copyToCacheDirectory: true,
     });
 
     if (result.canceled) return false;
 
     const fileAsset = result.assets[0];
-    if (!fileAsset.name.endsWith('.json')) {
-      Alert.alert('Invalid File', 'Please select a valid JSON backup file.');
-      return false;
-    }
 
     const fileContent = await FileSystem.readAsStringAsync(fileAsset.uri);
-    const parsedData = JSON.parse(fileContent);
+    
+    let parsedData;
+    try {
+      parsedData = JSON.parse(fileContent);
+    } catch (e) {
+      Alert.alert('Invalid File', 'The selected file is not a valid JSON document.');
+      return false;
+    }
 
     if (!parsedData.version || !parsedData.data) {
       Alert.alert('Invalid File Format', 'The selected file does not appear to be a Spendly backup.');
       return false;
     }
 
-    const { transactions, budgets, goals, settings, accounts, gamification } = parsedData.data;
+    // Verify cryptographic signature to prevent tampering
+    if (parsedData.signature) {
+      const expectedSignature = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        'SpendlySecretSalt_v1_' + JSON.stringify(parsedData.data)
+      );
+      
+      if (expectedSignature !== parsedData.signature) {
+        Alert.alert('File Tampered', 'This backup file has been modified manually and cannot be imported.');
+        return false;
+      }
+    } else {
+      Alert.alert('Security Error', 'This backup file is missing a security signature and cannot be verified.');
+      return false;
+    }
+
+    const { transactions, budgets, goals, settings, accounts, activeAccountId, gamification } = parsedData.data;
 
     // We ask for confirmation before overwriting
     return new Promise((resolve) => {
@@ -112,10 +184,36 @@ export async function importDataFromJSON(): Promise<boolean> {
             text: 'Restore',
             style: 'destructive',
             onPress: () => {
-              if (transactions) useTransactionStore.setState({ transactions });
-              if (budgets) useBudgetStore.setState({ budgets });
-              if (goals) useSavingsStore.setState({ goals });
-              if (accounts) useAccountStore.setState({ accounts });
+              const finalAccounts = accounts || useAccountStore.getState().accounts;
+              const finalActiveAccountId = activeAccountId || (finalAccounts.length > 0 ? finalAccounts[0].id : useAccountStore.getState().activeAccountId);
+
+              if (accounts) {
+                useAccountStore.setState({ accounts: finalAccounts, activeAccountId: finalActiveAccountId });
+              } else if (activeAccountId) {
+                useAccountStore.setState({ activeAccountId: finalActiveAccountId });
+              }
+
+              if (transactions) {
+                const migratedTxns = transactions.map((t: any) => ({
+                  ...t,
+                  accountId: t.accountId || finalActiveAccountId
+                }));
+                useTransactionStore.setState({ transactions: migratedTxns });
+              }
+              if (budgets) {
+                const migratedBudgets = budgets.map((b: any) => ({
+                  ...b,
+                  accountId: b.accountId || finalActiveAccountId
+                }));
+                useBudgetStore.setState({ budgets: migratedBudgets });
+              }
+              if (goals) {
+                const migratedGoals = goals.map((g: any) => ({
+                  ...g,
+                  accountId: g.accountId || finalActiveAccountId
+                }));
+                useSavingsStore.setState({ goals: migratedGoals });
+              }
               
               if (settings) {
                 const currentSettings = useSettingsStore.getState();
@@ -132,7 +230,9 @@ export async function importDataFromJSON(): Promise<boolean> {
                 });
               }
 
-              Alert.alert('Success', 'Data restored successfully! Please restart the app for all changes to take effect fully.');
+              const txnLen = transactions?.length || 0;
+              const accLen = accounts?.length || 0;
+              Alert.alert('Restore Complete', `Restored:\n${accLen} Accounts\n${txnLen} Transactions\n\nPlease completely close and restart the app.`);
               resolve(true);
             },
           },

@@ -165,10 +165,9 @@ export default function AnalyticsScreen() {
     }));
   }, [currentMonthTransactions]);
 
-  // Income vs Expense grouped bar chart data
   const comparisonData = useMemo(() => [
     {
-      value: prevIncome,
+      value: prevIncome || 0.1,
       label: 'Prev',
       frontColor: theme.colors.semantic.income,
       spacing: 6,
@@ -176,14 +175,14 @@ export default function AnalyticsScreen() {
       barBorderTopRightRadius: 6,
     },
     {
-      value: prevExpenses,
+      value: prevExpenses || 0.1,
       frontColor: theme.colors.semantic.expense,
+      spacing: 24,
       barBorderTopLeftRadius: 6,
       barBorderTopRightRadius: 6,
     },
-    { value: 0, frontColor: 'transparent', spacing: 20 },
     {
-      value: currentIncome,
+      value: currentIncome || 0.1,
       label: 'This Month',
       frontColor: theme.colors.semantic.income,
       spacing: 6,
@@ -191,7 +190,7 @@ export default function AnalyticsScreen() {
       barBorderTopRightRadius: 6,
     },
     {
-      value: currentExpenses,
+      value: currentExpenses || 0.1,
       frontColor: theme.colors.semantic.expense,
       barBorderTopLeftRadius: 6,
       barBorderTopRightRadius: 6,
@@ -203,9 +202,9 @@ export default function AnalyticsScreen() {
     const magnitude = Math.pow(10, Math.floor(Math.log10(maxVal)));
     for (const step of [1, 2, 2.5, 5, 10]) {
       const candidate = Math.ceil(maxVal / (magnitude * step)) * (magnitude * step);
-      if (candidate >= maxVal) return candidate;
+      if (candidate >= maxVal && isFinite(candidate)) return candidate;
     }
-    return Math.ceil(maxVal / magnitude) * magnitude;
+    return isFinite(maxVal) ? maxVal : 100;
   }, [prevIncome, prevExpenses, currentIncome, currentExpenses]);
 
   const incomeChange = prevIncome > 0 ? ((currentIncome - prevIncome) / prevIncome) * 100 : 0;
@@ -427,6 +426,7 @@ export default function AnalyticsScreen() {
                 formatYLabel={(label: string) => {
                   const val = Number(label);
                   if (isNaN(val) || val === 0) return '0';
+                  if (val >= 1_000_000_000) return `${Math.round(val / 1_000_000_000)}B`;
                   if (val >= 1_000_000) return `${Math.round(val / 1_000_000)}M`;
                   if (val >= 1_000) return `${Math.round(val / 1_000)}K`;
                   return Math.round(val).toString();

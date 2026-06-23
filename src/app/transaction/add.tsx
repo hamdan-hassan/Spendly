@@ -71,7 +71,7 @@ export default function AddTransactionScreen() {
   ];
 
   const handleSubmit = () => {
-    const parsedAmount = parseFloat(amount);
+    const parsedAmount = parseFloat(amount.replace(/,/g, ''));
     if (!parsedAmount || parsedAmount <= 0) return;
     if (!categoryId) return;
 
@@ -146,7 +146,7 @@ export default function AddTransactionScreen() {
     }
   };
 
-  const isValid = parseFloat(amount) > 0 && categoryId !== '';
+  const isValid = parseFloat(amount.replace(/,/g, '')) > 0 && categoryId !== '';
 
   return (
     <KeyboardAvoidingView
@@ -215,9 +215,35 @@ export default function AddTransactionScreen() {
               placeholder="0.00"
               placeholderTextColor={theme.colors.text.tertiary}
               value={amount}
-              onChangeText={setAmount}
+              onChangeText={(text) => {
+                let cleaned = text.replace(/[^0-9.]/g, '');
+                
+                const parts = cleaned.split('.');
+                if (parts.length > 2) cleaned = parts[0] + '.' + parts.slice(1).join('');
+                
+                let [intPart, decPart] = cleaned.split('.');
+                
+                if (cleaned.startsWith('.')) intPart = '0';
+                
+                if (intPart.length > 1 && intPart.startsWith('0')) {
+                  intPart = intPart.replace(/^0+/, '');
+                  if (intPart === '') intPart = '0';
+                }
+                
+                if (intPart.length > 10) intPart = intPart.substring(0, 10);
+                
+                if (decPart !== undefined && decPart.length > 2) {
+                  decPart = decPart.substring(0, 2);
+                }
+                
+                const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+                setAmount(decPart !== undefined ? `${formattedInt}.${decPart}` : formattedInt);
+              }}
               keyboardType="decimal-pad"
               autoFocus
+              adjustsFontSizeToFit
+              minimumFontScale={0.3}
+              numberOfLines={1}
             />
           </Animated.View>
 
@@ -403,7 +429,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   amountCurrency: { fontSize: 32 },
-  amountInput: { fontSize: 48, minWidth: 100, textAlign: 'center' },
+  amountInput: { fontSize: 48, minWidth: 100, flexShrink: 1, textAlign: 'center' },
 
   // Form
   label: { fontSize: 14, marginBottom: 8, marginTop: 16 },

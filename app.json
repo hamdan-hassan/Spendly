@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Spendly - Budget & Expense Tracker",
-    "description": "Master your personal finances, track daily expenses, and achieve your saving goals with Spendly. The premium budgeting app.",
+    "description": "Track daily expenses, manage your money, and achieve financial goals offline. The ultimate personal finance, budget planner, and daily expense tracker app.",
     "slug": "Spendly",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,15 +15,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": true,
-      "package": "com.spendly.app",
-      "permissions": [
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
-      ]
+      "package": "com.hamdanhassan.spendly"
     },
     "ios": {
       "icon": "./assets/images/icon.png",
-      "bundleIdentifier": "com.spendly.app"
+      "bundleIdentifier": "com.hamdanhassan.spendly"
     },
     "web": {
       "output": "static",
@@ -45,12 +41,6 @@
       "expo-secure-store",
       "expo-status-bar",
       [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Spendly uses your location to detect your local currency."
-        }
-      ],
-      [
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
@@ -62,7 +52,7 @@
         "react-native-google-mobile-ads",
         {
           "androidAppId": "ca-app-pub-4478899815710413~5485105432",
-          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+          "iosAppId": "ca-app-pub-4478899815710413~5485105432"
         }
       ],
       "expo-build-properties",

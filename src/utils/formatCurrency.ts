@@ -19,6 +19,10 @@ export function formatCurrency(
   const isNegative = amount < 0;
   const prefix = isNegative ? '-' : '';
 
+  if (compact && absAmount >= 1_000_000_000) {
+    const val = absAmount / 1_000_000_000;
+    return `${prefix}${symbol}${val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)}B`;
+  }
   if (compact && absAmount >= 1_000_000) {
     const val = absAmount / 1_000_000;
     return `${prefix}${symbol}${val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)}M`;

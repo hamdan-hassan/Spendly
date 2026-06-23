@@ -180,8 +180,12 @@ export default function TransactionsScreen() {
               {
                 color: isExpense ? theme.colors.semantic.expense : theme.colors.semantic.income,
                 fontFamily: 'Inter_600SemiBold',
+                maxWidth: '40%',
               },
             ]}
+            adjustsFontSizeToFit
+            minimumFontScale={0.5}
+            numberOfLines={1}
           >
             {isExpense ? '-' : '+'}{formatCurrency(txn.amount, currencySymbol)}
           </Text>
