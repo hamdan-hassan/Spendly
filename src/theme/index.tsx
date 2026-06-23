@@ -8,15 +8,16 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import { useColorScheme } from 'react-native';
 import { darkColors, lightColors, type ThemeColors } from './colors';
+import { premiumThemes } from './premiumThemes';
 import { textStyles, fontFamily, fontSize, lineHeight } from './typography';
 import { spacing, screenPadding, sectionGap, cardPadding, listItemGap } from './spacing';
 import { shadows, applyShadow } from './shadows';
 import { borderRadius } from './borderRadius';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = 'light' | 'dark' | 'system' | (string & {});
 
 export interface Theme {
-  mode: 'light' | 'dark';
+  mode: ThemeMode;
   colors: ThemeColors;
   typography: typeof textStyles;
   fontFamily: typeof fontFamily;
@@ -43,7 +44,7 @@ interface ThemeProviderProps {
 export function ThemeProvider({ children, themeMode }: ThemeProviderProps) {
   const systemColorScheme = useColorScheme();
 
-  const resolvedMode: 'light' | 'dark' = useMemo(() => {
+  const resolvedMode = useMemo(() => {
     if (themeMode === 'system') {
       return systemColorScheme === 'dark' ? 'dark' : 'light';
     }
@@ -51,10 +52,44 @@ export function ThemeProvider({ children, themeMode }: ThemeProviderProps) {
   }, [themeMode, systemColorScheme]);
 
   const theme: Theme = useMemo(
-    () => ({
-      mode: resolvedMode,
-      colors: resolvedMode === 'dark' ? darkColors : lightColors,
-      typography: textStyles,
+    () => {
+      let resolvedColors = lightColors;
+      let isDarkTheme = false;
+
+      if (resolvedMode === 'dark') {
+        resolvedColors = darkColors;
+        isDarkTheme = true;
+      } else {
+        const premiumMatch = premiumThemes.find(t => t.id === resolvedMode);
+        if (premiumMatch) {
+          isDarkTheme = premiumMatch.isDark;
+          const base = isDarkTheme ? darkColors : lightColors;
+          const pColors = premiumMatch.colors as any;
+          
+          resolvedColors = {
+            ...base,
+            bg: { ...base.bg, ...pColors.bg },
+            text: { ...base.text, ...pColors.text },
+            border: { ...base.border, ...pColors.border },
+            accent: { 
+              ...base.accent, 
+              primary: pColors.accent?.primary || base.accent.primary,
+              secondary: pColors.accent?.secondary || base.accent.secondary,
+            },
+            semantic: {
+              ...base.semantic,
+              income: pColors.accent?.success || base.semantic.income,
+              expense: pColors.accent?.danger || base.semantic.expense,
+              warning: pColors.accent?.warning || base.semantic.warning,
+            }
+          };
+        }
+      }
+
+      return {
+        mode: resolvedMode,
+        colors: resolvedColors,
+        typography: textStyles,
       fontFamily,
       fontSize,
       lineHeight,
@@ -66,8 +101,9 @@ export function ThemeProvider({ children, themeMode }: ThemeProviderProps) {
       shadows,
       applyShadow,
       borderRadius,
-      isDark: resolvedMode === 'dark',
-    }),
+      isDark: isDarkTheme,
+      };
+    },
     [resolvedMode],
   );
 
@@ -90,8 +126,8 @@ export function useThemeContext(): Theme {
   return ctx;
 }
 
-// Re-export everything for convenience
 export { darkColors, lightColors, type ThemeColors } from './colors';
+export { premiumThemes, type PremiumThemeDef } from './premiumThemes';
 export { palette, categoryColors, gradients } from './colors';
 export { textStyles, fontFamily, fontSize, lineHeight } from './typography';
 export { spacing, screenPadding, sectionGap, cardPadding, listItemGap } from './spacing';

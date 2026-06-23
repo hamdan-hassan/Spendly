@@ -16,6 +16,7 @@ interface BudgetState {
 
   // Actions
   addBudget: (data: {
+    accountId: string;
     name: string;
     categoryId: string | null;
     amount: number;
@@ -24,6 +25,10 @@ interface BudgetState {
   updateBudget: (id: string, data: Partial<Budget>) => void;
   deleteBudget: (id: string) => void;
   updateBudgetSpending: (budgetId: string, spent: number) => void;
+
+  // Multi-Account Support
+  convertCurrency: (accountId: string, multiplier: number) => void;
+  _assignToMainWallet: (mainWalletId: string) => void;
 
   // Queries
   getBudgetById: (id: string) => Budget | undefined;
@@ -78,6 +83,30 @@ export const useBudgetStore = create<BudgetState>()(
             b.id === budgetId ? { ...b, spent, updatedAt: new Date().toISOString() } : b,
           ),
         }));
+      },
+
+      convertCurrency: (accountId, multiplier) => {
+        set((state) => ({
+          budgets: state.budgets.map((b) =>
+            b.accountId === accountId
+              ? { ...b, amount: b.amount * multiplier, spent: b.spent * multiplier }
+              : b
+          ),
+        }));
+      },
+
+      _assignToMainWallet: (mainWalletId) => {
+        set((state) => {
+          let modified = false;
+          const updated = state.budgets.map((b) => {
+            if (!b.accountId) {
+              modified = true;
+              return { ...b, accountId: mainWalletId };
+            }
+            return b;
+          });
+          return modified ? { budgets: updated } : state;
+        });
       },
 
       getBudgetById: (id) => get().budgets.find((b) => b.id === id),

@@ -61,7 +61,7 @@ export function generateInsights(input: InsightInput): FinancialInsight[] {
   // 2. Savings insight
   const currentSavings = currentMonthIncome - currentMonthExpenses;
   const previousSavings = previousMonthIncome - previousMonthExpenses;
-  if (currentSavings > previousSavings && previousSavings >= 0) {
+  if (currentSavings > previousSavings && previousMonthIncome > 0) {
     insights.push({
       id: generateId(),
       type: 'positive',

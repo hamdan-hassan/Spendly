@@ -4,6 +4,7 @@
 
 export interface Budget {
   id: string;
+  accountId?: string; // Optional for backward compatibility before migration
   name: string;
   categoryId: string | null; // null = overall budget
   amount: number;

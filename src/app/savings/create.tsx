@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { useThemeContext } from '@/theme';
+import { useAccountStore } from '@/store/useAccountStore';
 import { useSavingsStore } from '@/store/useSavingsStore';
 import { useGamificationStore } from '@/store/useGamificationStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -45,10 +46,14 @@ export default function CreateSavingsGoalScreen() {
   const [targetAmount, setTargetAmount] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('shield-checkmark-outline');
   const [selectedColor, setSelectedColor] = useState('#6366F1');
+  const [deadlineMonths, setDeadlineMonths] = useState(3);
+
+  const accountStore = useAccountStore();
+  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
 
   const addGoal = useSavingsStore((s) => s.addGoal);
   const onSavingsGoalCreated = useGamificationStore((s) => s.onSavingsGoalCreated);
-  const currencySymbol = useSettingsStore((s) => s.currencySymbol);
 
   const handleSubmit = () => {
     const parsed = parseFloat(targetAmount);
@@ -56,9 +61,9 @@ export default function CreateSavingsGoalScreen() {
 
     haptics.success();
 
-    // Default deadline: 90 days from now
+    // Calculate deadline based on selected months
     const deadline = new Date();
-    deadline.setDate(deadline.getDate() + 90);
+    deadline.setMonth(deadline.getMonth() + deadlineMonths);
 
     addGoal({
       name: name.trim(),
@@ -66,6 +71,7 @@ export default function CreateSavingsGoalScreen() {
       deadline: deadline.toISOString(),
       icon: selectedIcon,
       color: selectedColor,
+      accountId: accountStore.activeAccountId || '',
     });
 
     onSavingsGoalCreated();
@@ -132,6 +138,36 @@ export default function CreateSavingsGoalScreen() {
                 onChangeText={setTargetAmount}
                 keyboardType="decimal-pad"
               />
+            </View>
+          </Animated.View>
+
+          {/* Deadline Picker */}
+          <Animated.View entering={FadeInDown.delay(225).duration(500)}>
+            <Text style={[styles.label, { color: theme.colors.text.secondary, fontFamily: 'Inter_500Medium' }]}>
+              Target Deadline
+            </Text>
+            <View style={styles.deadlineGrid}>
+              {[
+                { label: '1 Month', value: 1 },
+                { label: '3 Months', value: 3 },
+                { label: '6 Months', value: 6 },
+                { label: '1 Year', value: 12 },
+              ].map((opt) => (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => { haptics.selection(); setDeadlineMonths(opt.value); }}
+                  style={[
+                    styles.deadlineBtn,
+                    {
+                      backgroundColor: deadlineMonths === opt.value ? theme.colors.accent.primary : theme.colors.bg.secondary,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: deadlineMonths === opt.value ? '#FFFFFF' : theme.colors.text.secondary, fontFamily: 'Inter_500Medium', fontSize: 14 }}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
           </Animated.View>
 
@@ -225,6 +261,9 @@ const styles = StyleSheet.create({
 
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   iconBtn: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+
+  deadlineGrid: { flexDirection: 'row', gap: 8 },
+  deadlineBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 
   colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   colorBtn: { width: 36, height: 36, borderRadius: 18 },

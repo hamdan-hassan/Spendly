@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { useThemeContext } from '@/theme';
+import { useAccountStore } from '@/store/useAccountStore';
 import { useBudgetStore } from '@/store/useBudgetStore';
 import { useGamificationStore } from '@/store/useGamificationStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -25,9 +26,12 @@ export default function CreateBudgetScreen() {
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState<string>('');
 
+  const accountStore = useAccountStore();
+  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
+
   const addBudget = useBudgetStore((s) => s.addBudget);
   const onBudgetCreated = useGamificationStore((s) => s.onBudgetCreated);
-  const currencySymbol = useSettingsStore((s) => s.currencySymbol);
 
   const handleSubmit = () => {
     const parsedAmount = parseFloat(amount);
@@ -42,6 +46,7 @@ export default function CreateBudgetScreen() {
       categoryId,
       amount: parsedAmount,
       period: 'monthly',
+      accountId: accountStore.activeAccountId || '',
     });
 
     onBudgetCreated();

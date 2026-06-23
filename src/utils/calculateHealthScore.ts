@@ -65,15 +65,15 @@ export function calculateHealthScore(input: HealthScoreInput): HealthScoreData {
   }
   spendingControl = Math.max(0, Math.min(34, spendingControl));
 
-  // 3. Budget Adherence Score (0-33)
+  // 3. Budget Adherence Score (-20 to 33)
   let budgetAdherence = 20; // base score if no budget
   if (budgetTotal > 0) {
     const budgetUtilization = budgetSpent / budgetTotal;
     if (budgetUtilization <= 0.7) budgetAdherence = 33;
-    else if (budgetUtilization <= 0.85) budgetAdherence = 28;
-    else if (budgetUtilization <= 1.0) budgetAdherence = 22;
-    else if (budgetUtilization <= 1.15) budgetAdherence = 12;
-    else budgetAdherence = 5;
+    else if (budgetUtilization <= 0.9) budgetAdherence = 25;
+    else if (budgetUtilization <= 1.0) budgetAdherence = 15;
+    else if (budgetUtilization <= 1.15) budgetAdherence = 0; // Lost all points
+    else budgetAdherence = -15; // Active penalty against total score
   }
 
   const score = savingsHabit + spendingControl + budgetAdherence;

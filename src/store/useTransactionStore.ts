@@ -16,6 +16,7 @@ interface TransactionState {
 
   // Actions
   addTransaction: (data: {
+    accountId: string;
     type: TransactionType;
     amount: number;
     categoryId: string;
@@ -26,6 +27,10 @@ interface TransactionState {
   updateTransaction: (id: string, data: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
   duplicateTransaction: (id: string) => Transaction | null;
+
+  // Multi-Account Support
+  convertCurrency: (accountId: string, multiplier: number) => void;
+  _assignToMainWallet: (mainWalletId: string) => void;
 
   // Queries
   getTransactionById: (id: string) => Transaction | undefined;
@@ -88,6 +93,28 @@ export const useTransactionStore = create<TransactionState>()(
           transactions: [duplicate, ...state.transactions],
         }));
         return duplicate;
+      },
+
+      convertCurrency: (accountId, multiplier) => {
+        set((state) => ({
+          transactions: state.transactions.map((t) =>
+            t.accountId === accountId ? { ...t, amount: t.amount * multiplier } : t
+          ),
+        }));
+      },
+
+      _assignToMainWallet: (mainWalletId) => {
+        set((state) => {
+          let modified = false;
+          const updated = state.transactions.map((t) => {
+            if (!t.accountId) {
+              modified = true;
+              return { ...t, accountId: mainWalletId };
+            }
+            return t;
+          });
+          return modified ? { transactions: updated } : state;
+        });
       },
 
       getTransactionById: (id) => {

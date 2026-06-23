@@ -13,12 +13,14 @@ export interface AppSettings {
   hasCompletedOnboarding: boolean;
   userName: string;
   isFirstLaunch: boolean;
+  requireBiometrics: boolean;
 }
 
 export interface NotificationSettings {
   dailyReminder: boolean;
   dailyReminderTime: string;  // HH:mm format
   budgetAlerts: boolean;
+  budgetAlertThreshold: number;
   savingsReminders: boolean;
   weeklyReport: boolean;
 }

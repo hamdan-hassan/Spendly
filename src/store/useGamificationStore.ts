@@ -13,8 +13,10 @@ import { getLevelForXP, xpRewards } from '../constants/levels';
 import { format } from 'date-fns';
 
 interface GamificationActions {
-  // XP
+  // XP & Store
   addXP: (amount: number) => void;
+  spendXP: (amount: number) => boolean;
+  purchaseTheme: (themeId: string, cost: number) => boolean;
 
   // Streaks
   logDailyActivity: () => void;
@@ -28,7 +30,7 @@ interface GamificationActions {
   getLockedAchievements: () => UserAchievement[];
 
   // Combined actions
-  onExpenseLogged: () => void;
+  onExpenseLogged: (amount?: number) => void;
   onIncomeLogged: () => void;
   onBudgetCreated: () => void;
   onSavingsGoalCreated: () => void;
@@ -56,6 +58,7 @@ export const useGamificationStore = create<GamificationStore>()(
         lastBudgetDate: null,
       },
       achievements: initialAchievements,
+      purchasedThemes: [],
 
       addXP: (amount) => {
         set((state) => {
@@ -63,6 +66,30 @@ export const useGamificationStore = create<GamificationStore>()(
           const newLevel = getLevelForXP(newXP);
           return { xp: newXP, level: newLevel.level };
         });
+        const st = get();
+        if (st.xp >= 50000) {
+          st.checkAndUnlockAchievement('half_century', 50000);
+        }
+      },
+
+      spendXP: (amount) => {
+        const state = get();
+        if (state.xp >= amount) {
+          set({ xp: state.xp - amount });
+          return true;
+        }
+        return false;
+      },
+
+      purchaseTheme: (themeId, cost) => {
+        const state = get();
+        if (state.purchasedThemes.includes(themeId)) return true;
+        
+        if (state.spendXP(cost)) {
+          set((s) => ({ purchasedThemes: [...s.purchasedThemes, themeId] }));
+          return true;
+        }
+        return false;
       },
 
       logDailyActivity: () => {
@@ -159,7 +186,7 @@ export const useGamificationStore = create<GamificationStore>()(
       getLockedAchievements: () =>
         get().achievements.filter((a) => !a.isUnlocked),
 
-      onExpenseLogged: () => {
+      onExpenseLogged: (amount?: number) => {
         const state = get();
         state.addXP(xpRewards.logExpense);
         state.logDailyActivity();
@@ -179,6 +206,31 @@ export const useGamificationStore = create<GamificationStore>()(
         state.checkAndUnlockAchievement('daily_streak_7', dailyStreak);
         state.checkAndUnlockAchievement('daily_streak_14', dailyStreak);
         state.checkAndUnlockAchievement('daily_streak_30', dailyStreak);
+
+        // NEW ACHIEVEMENTS LOGIC
+        const now = new Date();
+        const hour = now.getHours();
+        if (hour < 8) {
+          state.checkAndUnlockAchievement('early_bird', 1);
+        }
+        if (hour >= 0 && hour < 4) {
+          state.checkAndUnlockAchievement('night_owl', 1);
+        }
+        
+        const day = now.getDay();
+        if (day === 5) {
+          state.checkAndUnlockAchievement('frugal_friday', 1);
+        }
+        if (day === 0 || day === 6) { // Sunday or Saturday
+          const weekendCount = state.achievements.find(a => a.achievementId === 'weekend_spender')?.currentValue ?? 0;
+          state.checkAndUnlockAchievement('weekend_spender', weekendCount + 1);
+        }
+
+        if (amount !== undefined) {
+          if (amount > 500) {
+            state.checkAndUnlockAchievement('big_spender', 1);
+          }
+        }
       },
 
       onIncomeLogged: () => {

@@ -4,15 +4,17 @@
  * Theme selection, currency, notifications, data management, achievements.
  */
 
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, Alert, Switch } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable, Alert, Switch, TextInput, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { useThemeContext, type ThemeMode } from '@/theme';
+import { useThemeContext, premiumThemes, type ThemeMode } from '@/theme';
+import ConfettiCannon from 'react-native-confetti-cannon';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { useAccountStore } from '@/store/useAccountStore';
 import { useTransactionStore } from '@/store/useTransactionStore';
 import { useBudgetStore } from '@/store/useBudgetStore';
 import { useSavingsStore } from '@/store/useSavingsStore';
@@ -20,8 +22,13 @@ import { useGamificationStore } from '@/store/useGamificationStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { getLevelForXP, getLevelProgress } from '@/constants/levels';
 import { achievements as allAchievements } from '@/constants/achievements';
-import { currencies } from '@/constants/currencies';
+import { currencies, searchCurrencies } from '@/constants/currencies';
 import { clearAllData } from '@/services/storage';
+import { requestNotificationPermissions, scheduleDailyReminder, cancelNotificationsByTag } from '@/services/notifications';
+import { exportDataAsJSON, exportDataAsPDF, importDataFromJSON } from '@/services/export';
+import { BannerAd, BannerAdSize, useRewardedAd, RewardedAdEventType } from 'react-native-google-mobile-ads';
+import { BANNER_AD_UNIT_ID, REWARDED_AD_UNIT_ID } from '@/services/ads';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function SettingsScreen() {
   const theme = useThemeContext();
@@ -29,31 +36,130 @@ export default function SettingsScreen() {
   const haptics = useHaptics();
 
   const settings = useSettingsStore();
+  const accountStore = useAccountStore();
+  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  
+  const currentCurrencyCode = activeAccount?.currencyCode || settings.currencyCode;
+  const currentCurrencySymbol = activeAccount?.currencySymbol || settings.currencySymbol;
+
   const xp = useGamificationStore((s) => s.xp);
   const level = useGamificationStore((s) => s.level);
   const streaks = useGamificationStore((s) => s.streaks);
-  const unlockedAchievements = useGamificationStore((s) => s.getUnlockedAchievements());
-  const transactions = useTransactionStore((s) => s.transactions);
+  const allGamificationAchievements = useGamificationStore((s) => s.achievements);
+  const unlockedAchievements = useMemo(() => allGamificationAchievements.filter((a) => a.isUnlocked), [allGamificationAchievements]);
+  
+  // Filter transactions for stats
+  const allTransactions = useTransactionStore((s) => s.transactions);
+  const transactions = useMemo(() => allTransactions.filter(t => t.accountId === accountStore.activeAccountId), [allTransactions, accountStore.activeAccountId]);
+  
+  const addXP = useGamificationStore((s) => s.addXP);
+
+  const { isLoaded, isClosed, isEarnedReward, load, show } = useRewardedAd(REWARDED_AD_UNIT_ID, {
+    requestNonPersonalizedAdsOnly: true,
+  });
+
+  React.useEffect(() => {
+    load();
+  }, [load, isClosed]);
+
+  React.useEffect(() => {
+    if (isEarnedReward) {
+      addXP(200);
+      Alert.alert("Reward Earned!", "You've earned +200 XP for watching an ad.");
+    }
+  }, [isEarnedReward, addXP]);
+
+  const handleWatchAdForXP = () => {
+    if (isLoaded) {
+      show();
+    } else {
+      Alert.alert("Ad Not Ready", "Please wait a moment for the ad to load.");
+    }
+  };
+
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
 
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState('');
+  
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const timePickerDate = useMemo(() => {
+    const d = new Date();
+    const [h, m] = ((settings.notifications as any).dailyReminderTime || '08:00').split(':');
+    d.setHours(parseInt(h, 10));
+    d.setMinutes(parseInt(m, 10));
+    return d;
+  }, [settings.notifications]);
 
   const currentLevel = getLevelForXP(xp);
   const levelProgress = getLevelProgress(xp);
 
-  const filteredCurrencies = currencySearch
-    ? currencies.filter((c) =>
-        c.code.toLowerCase().includes(currencySearch.toLowerCase()) ||
-        c.name.toLowerCase().includes(currencySearch.toLowerCase()),
-      )
-    : currencies;
+  const filteredCurrencies = currencySearch ? searchCurrencies(currencySearch) : currencies;
 
-  const handleExportJSON = () => {
-    Alert.alert('Export Data', 'Your data will be exported as JSON.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Export', onPress: () => haptics.success() },
-    ]);
+  const handleCurrencySelect = (c: typeof currencies[0]) => {
+    Alert.alert(
+      `Change Currency to ${c.code}`,
+      'What would you like to do?',
+      [
+        {
+          text: 'Just Change Currency',
+          onPress: () => {
+            if (activeAccount) {
+               accountStore.updateAccount(activeAccount.id, { currencyCode: c.code, currencySymbol: c.symbol });
+            }
+            settings.setCurrency(c.code, c.symbol, c.locale);
+            setShowCurrencyPicker(false);
+          }
+        },
+        {
+          text: 'Change & Convert Amounts',
+          onPress: async () => {
+            try {
+               const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${currentCurrencyCode}`);
+               const data = await res.json();
+               const rate = data.rates[c.code];
+               if (!rate) throw new Error('Rate not found');
+               
+               if (activeAccount) {
+                 accountStore.updateAccount(activeAccount.id, { currencyCode: c.code, currencySymbol: c.symbol });
+                 useTransactionStore.getState().convertCurrency(activeAccount.id, rate);
+                 useBudgetStore.getState().convertCurrency(activeAccount.id, rate);
+                 useSavingsStore.getState().convertCurrency(activeAccount.id, rate);
+               }
+               settings.setCurrency(c.code, c.symbol, c.locale);
+               setShowCurrencyPicker(false);
+               Alert.alert('Success', `Currency and all amounts have been converted to ${c.code}.`);
+            } catch (e) {
+               Alert.alert('Conversion Failed', 'Could not fetch live exchange rates. Check your internet connection.');
+            }
+          }
+        },
+        {
+          text: 'Create New Account',
+          onPress: () => {
+            const newAcc = accountStore.addAccount({
+              name: `${c.code} Wallet`,
+              currencyCode: c.code,
+              currencySymbol: c.symbol,
+              color: '#10B981',
+              icon: 'wallet',
+            });
+            accountStore.setActiveAccount(newAcc.id);
+            settings.setCurrency(c.code, c.symbol, c.locale);
+            setShowCurrencyPicker(false);
+            Alert.alert('Account Created', `Created a new ${c.code} Wallet and switched to it.`);
+          }
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
   };
+
 
   const handleClearData = () => {
     Alert.alert(
@@ -74,11 +180,26 @@ export default function SettingsScreen() {
     );
   };
 
-  const themeOptions: { label: string; value: ThemeMode; icon: string }[] = [
-    { label: 'Dark', value: 'dark', icon: 'moon-outline' },
-    { label: 'Light', value: 'light', icon: 'sunny-outline' },
-    { label: 'System', value: 'system', icon: 'phone-portrait-outline' },
-  ];
+  const purchasedThemes = useGamificationStore((s) => s.purchasedThemes);
+  const purchaseTheme = useGamificationStore((s) => s.purchaseTheme);
+
+  const themeOptions = useMemo(() => {
+    const baseOptions: { label: string; value: string; icon: string; premium?: boolean; cost?: number }[] = [
+      { label: 'Dark', value: 'dark', icon: 'moon-outline' },
+      { label: 'Light', value: 'light', icon: 'sunny-outline' },
+      { label: 'System', value: 'system', icon: 'phone-portrait-outline' },
+    ];
+    
+    const pThemes = premiumThemes.map(t => ({
+      label: t.name,
+      value: t.id,
+      icon: t.icon,
+      premium: true,
+      cost: t.cost,
+    }));
+    
+    return [...baseOptions, ...pThemes];
+  }, []);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
@@ -97,9 +218,32 @@ export default function SettingsScreen() {
               <Ionicons name={currentLevel.icon as any} size={28} color={currentLevel.color} />
             </View>
             <View style={styles.profileInfo}>
-              <Text style={[styles.profileName, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }]}>
-                {settings.userName || 'Spendly User'}
-              </Text>
+              {isEditingName ? (
+                <TextInput
+                  style={[styles.profileName, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold', borderBottomWidth: 1, borderBottomColor: theme.colors.bg.tertiary, paddingVertical: 0, paddingHorizontal: 0, marginBottom: 0 }]}
+                  value={editNameValue}
+                  onChangeText={setEditNameValue}
+                  autoFocus
+                  onBlur={() => {
+                    settings.setUserName(editNameValue.trim());
+                    setIsEditingName(false);
+                  }}
+                  onSubmitEditing={() => {
+                    settings.setUserName(editNameValue.trim());
+                    setIsEditingName(false);
+                  }}
+                  returnKeyType="done"
+                />
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <Text style={[styles.profileName, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold', marginBottom: 0 }]}>
+                    {settings.userName || 'Spendly User'}
+                  </Text>
+                  <Pressable hitSlop={10} onPress={() => { setIsEditingName(true); setEditNameValue(settings.userName || ''); }}>
+                    <Ionicons name="pencil" size={14} color={theme.colors.text.tertiary} />
+                  </Pressable>
+                </View>
+              )}
               <Text style={[styles.profileLevel, { color: currentLevel.color, fontFamily: 'Inter_500Medium' }]}>
                 {currentLevel.name}
               </Text>
@@ -143,41 +287,171 @@ export default function SettingsScreen() {
           </View>
         </Animated.View>
 
+        {/* Free XP Reward */}
+        <Animated.View entering={FadeInDown.delay(125).duration(600)} style={styles.section}>
+          <Pressable
+            onPress={handleWatchAdForXP}
+            style={[styles.settingRow, { backgroundColor: theme.colors.accent.primary, paddingVertical: 18 }]}
+          >
+            <View style={styles.settingLeft}>
+              <Ionicons name="play-circle" size={24} color="#FFFFFF" />
+              <View>
+                <Text style={[styles.settingLabel, { color: '#FFFFFF', fontFamily: 'Inter_700Bold' }]}>
+                  Watch Ad for +200 XP
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, fontFamily: 'Inter_400Regular' }}>
+                  Level up faster and unlock achievements
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => { haptics.selection(); router.push('/achievements'); }}
+            style={[styles.settingRow, { backgroundColor: theme.colors.bg.secondary, marginTop: 12, paddingVertical: 18 }]}
+          >
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: '#F59E0B' + '20' }]}>
+                <Ionicons name="trophy" size={20} color="#F59E0B" />
+              </View>
+              <View>
+                <Text style={[styles.settingLabel, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }]}>
+                  Trophy Room
+                </Text>
+                <Text style={{ color: theme.colors.text.tertiary, fontSize: 12, fontFamily: 'Inter_400Regular' }}>
+                  View your unlocked badges and goals
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.colors.text.tertiary} />
+          </Pressable>
+        </Animated.View>
+
         {/* Appearance */}
-        <Animated.View entering={FadeInDown.delay(200).duration(600)} style={styles.section}>
+        <Animated.View entering={FadeInDown.delay(150).duration(600)} style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text.tertiary, fontFamily: 'Inter_600SemiBold' }]}>
             APPEARANCE
           </Text>
-          <View style={styles.themeRow}>
-            {themeOptions.map((opt) => (
-              <Pressable
-                key={opt.value}
-                onPress={() => { haptics.selection(); settings.setTheme(opt.value); }}
-                style={[
-                  styles.themeBtn,
-                  {
-                    backgroundColor: settings.theme === opt.value ? theme.colors.accent.primary : theme.colors.bg.secondary,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={opt.icon as any}
-                  size={20}
-                  color={settings.theme === opt.value ? '#FFFFFF' : theme.colors.text.secondary}
-                />
-                <Text
+          <View style={[styles.themeRow, { flexWrap: 'wrap' }]}>
+            {themeOptions.map((opt) => {
+              const isUnlocked = !opt.premium || purchasedThemes.includes(opt.value);
+              const isSelected = settings.theme === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => { 
+                    haptics.selection(); 
+                    if (isUnlocked) {
+                      settings.setTheme(opt.value);
+                    } else {
+                      Alert.alert(
+                        `Unlock ${opt.label}?`,
+                        `This premium theme costs ${opt.cost} XP. You currently have ${xp} XP.`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: `Unlock (${opt.cost} XP)`,
+                            onPress: () => {
+                              if (purchaseTheme(opt.value, opt.cost!)) {
+                                haptics.success();
+                                setShowConfetti(false); // reset
+                                setTimeout(() => setShowConfetti(true), 100);
+                                settings.setTheme(opt.value);
+                              } else {
+                                haptics.error();
+                                Alert.alert('Not enough XP', 'Keep logging transactions and completing goals to earn more XP!');
+                              }
+                            }
+                          }
+                        ]
+                      );
+                    }
+                  }}
                   style={[
-                    styles.themeBtnText,
+                    styles.themeBtn,
                     {
-                      color: settings.theme === opt.value ? '#FFFFFF' : theme.colors.text.secondary,
-                      fontFamily: 'Inter_500Medium',
+                      width: '48%',
+                      marginBottom: 8,
+                      backgroundColor: isSelected ? theme.colors.accent.primary : theme.colors.bg.secondary,
+                      opacity: isUnlocked ? 1 : 0.6,
                     },
                   ]}
                 >
-                  {opt.label}
+                  <Ionicons
+                    name={isUnlocked ? opt.icon as any : 'lock-closed'}
+                    size={20}
+                    color={isSelected ? '#FFFFFF' : theme.colors.text.secondary}
+                  />
+                  <Text
+                    style={[
+                      styles.themeBtnText,
+                      {
+                        color: isSelected ? '#FFFFFF' : theme.colors.text.secondary,
+                        fontFamily: 'Inter_500Medium',
+                      },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Animated.View>
+
+        {/* AI Personality */}
+        <Animated.View entering={FadeInDown.delay(175).duration(600)} style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.tertiary, fontFamily: 'Inter_600SemiBold' }]}>
+            AI ASSISTANT
+          </Text>
+          <View style={[styles.settingRow, { backgroundColor: theme.colors.bg.secondary, paddingVertical: 12 }]}>
+            <View style={styles.settingLeft}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F59E0B20', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 18 }}>🦉</Text>
+              </View>
+              <View>
+                <Text style={[styles.settingLabel, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }]}>
+                  Nova
                 </Text>
-              </Pressable>
-            ))}
+                <Text style={{ color: theme.colors.text.tertiary, fontSize: 12, fontFamily: 'Inter_400Regular' }}>
+                  Your AI Financial Advisor
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={settings.aiPersonality}
+              onValueChange={(val) => {
+                haptics.selection();
+                settings.setAIPersonality(val);
+              }}
+              trackColor={{ false: theme.colors.bg.tertiary, true: '#F59E0B' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        </Animated.View>
+
+        {/* Security */}
+        <Animated.View entering={FadeInDown.delay(225).duration(600)} style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text.tertiary, fontFamily: 'Inter_600SemiBold' }]}>
+            SECURITY
+          </Text>
+          <View style={[styles.settingRow, { backgroundColor: theme.colors.bg.secondary }]}>
+            <View style={styles.settingLeft}>
+              <Ionicons name="lock-closed-outline" size={20} color={theme.colors.accent.primary} />
+              <Text style={[styles.settingLabel, { color: theme.colors.text.primary, fontFamily: 'Inter_500Medium' }]}>
+                Biometric App Lock
+              </Text>
+            </View>
+            <Switch
+              value={settings.requireBiometrics}
+              onValueChange={(val) => {
+                haptics.selection();
+                settings.setRequireBiometrics(val);
+              }}
+              trackColor={{ false: theme.colors.bg.tertiary, true: theme.colors.accent.primary }}
+              thumbColor="#FFFFFF"
+            />
           </View>
         </Animated.View>
 
@@ -198,24 +472,36 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.settingRight}>
               <Text style={[styles.settingValue, { color: theme.colors.text.secondary, fontFamily: 'Inter_400Regular' }]}>
-                {settings.currencySymbol} {settings.currencyCode}
+                {currentCurrencySymbol} {currentCurrencyCode}
               </Text>
               <Ionicons name="chevron-forward" size={18} color={theme.colors.text.tertiary} />
             </View>
           </Pressable>
           {showCurrencyPicker && (
             <View style={[styles.pickerList, { backgroundColor: theme.colors.bg.secondary }]}>
+              <TextInput
+                style={{ 
+                  padding: 12, 
+                  color: theme.colors.text.primary, 
+                  borderBottomWidth: 1, 
+                  borderBottomColor: theme.colors.bg.tertiary,
+                  fontFamily: 'Inter_400Regular'
+                }}
+                placeholder="Search currency..."
+                placeholderTextColor={theme.colors.text.tertiary}
+                value={currencySearch}
+                onChangeText={setCurrencySearch}
+              />
               {filteredCurrencies.slice(0, 20).map((c) => (
                 <Pressable
                   key={c.code}
                   onPress={() => {
                     haptics.selection();
-                    settings.setCurrency(c.code, c.symbol, c.locale);
-                    setShowCurrencyPicker(false);
+                    handleCurrencySelect(c);
                   }}
                   style={[
                     styles.pickerItem,
-                    c.code === settings.currencyCode && { backgroundColor: theme.colors.accent.primaryMuted },
+                    c.code === currentCurrencyCode && { backgroundColor: theme.colors.accent.primaryMuted },
                   ]}
                 >
                   <Text style={styles.pickerFlag}>{c.flag}</Text>
@@ -245,22 +531,75 @@ export default function SettingsScreen() {
             { key: 'savingsReminders', label: 'Savings Reminders', icon: 'flag-outline' },
             { key: 'weeklyReport', label: 'Weekly Report', icon: 'document-text-outline' },
           ].map((item) => (
-            <View key={item.key} style={[styles.settingRow, { backgroundColor: theme.colors.bg.secondary }]}>
-              <View style={styles.settingLeft}>
-                <Ionicons name={item.icon as any} size={20} color={theme.colors.accent.primary} />
-                <Text style={[styles.settingLabel, { color: theme.colors.text.primary, fontFamily: 'Inter_500Medium' }]}>
-                  {item.label}
-                </Text>
+            <View key={item.key}>
+              <View style={[styles.settingRow, { backgroundColor: theme.colors.bg.secondary }]}>
+                <View style={styles.settingLeft}>
+                  <Ionicons name={item.icon as any} size={20} color={theme.colors.accent.primary} />
+                  <Text style={[styles.settingLabel, { color: theme.colors.text.primary, fontFamily: 'Inter_500Medium' }]}>
+                    {item.label}
+                  </Text>
+                </View>
+                <View style={styles.settingRight}>
+                  {item.key === 'dailyReminder' && (settings.notifications as any)[item.key] && (
+                    <Pressable 
+                      onPress={() => setShowTimePicker(true)}
+                      style={{ marginRight: 12, backgroundColor: theme.colors.bg.tertiary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                    >
+                      <Text style={{ color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }}>
+                        {(settings.notifications as any).dailyReminderTime || '08:00'}
+                      </Text>
+                    </Pressable>
+                  )}
+                  <Switch
+                    value={(settings.notifications as any)[item.key]}
+                    onValueChange={async (v) => {
+                      haptics.selection();
+                      
+                      if (v) {
+                        const granted = await requestNotificationPermissions();
+                        if (!granted) {
+                          Alert.alert('Permission Required', 'Please enable notifications for Spendly in your device settings.');
+                          settings.setNotifications({ [item.key]: false });
+                          return;
+                        }
+                      }
+
+                      settings.setNotifications({ [item.key]: v });
+
+                      if (item.key === 'dailyReminder') {
+                        if (v) {
+                          const timeStr = (settings.notifications as any).dailyReminderTime || '08:00';
+                          const [hour, min] = timeStr.split(':').map(Number);
+                          await scheduleDailyReminder(hour, min);
+                        } else {
+                          await cancelNotificationsByTag('daily-reminder');
+                        }
+                      }
+                    }}
+                    trackColor={{ false: theme.colors.bg.tertiary, true: theme.colors.accent.primary }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
               </View>
-              <Switch
-                value={(settings.notifications as any)[item.key]}
-                onValueChange={(v) => {
-                  haptics.selection();
-                  settings.setNotifications({ [item.key]: v });
-                }}
-                trackColor={{ false: theme.colors.bg.tertiary, true: theme.colors.accent.primary }}
-                thumbColor="#FFFFFF"
-              />
+              
+              {item.key === 'dailyReminder' && showTimePicker && (
+                <DateTimePicker
+                  value={timePickerDate}
+                  mode="time"
+                  is24Hour={false}
+                  display="default"
+                  onChange={async (event, selectedDate) => {
+                    if (Platform.OS === 'android') setShowTimePicker(false);
+                    if (selectedDate) {
+                      const h = selectedDate.getHours().toString().padStart(2, '0');
+                      const m = selectedDate.getMinutes().toString().padStart(2, '0');
+                      const timeStr = `${h}:${m}`;
+                      settings.setNotifications({ dailyReminderTime: timeStr });
+                      await scheduleDailyReminder(selectedDate.getHours(), selectedDate.getMinutes());
+                    }
+                  }}
+                />
+              )}
             </View>
           ))}
         </Animated.View>
@@ -271,7 +610,9 @@ export default function SettingsScreen() {
             DATA
           </Text>
           {[
-            { label: 'Export as JSON', icon: 'download-outline', color: theme.colors.accent.primary, onPress: handleExportJSON },
+            { label: 'Import from JSON', icon: 'cloud-upload-outline', color: theme.colors.accent.primary, onPress: importDataFromJSON },
+            { label: 'Export as JSON', icon: 'download-outline', color: theme.colors.accent.primary, onPress: exportDataAsJSON },
+            { label: 'Export Monthly Report (PDF)', icon: 'document-text-outline', color: theme.colors.semantic.income, onPress: exportDataAsPDF },
             { label: 'Clear All Data', icon: 'trash-outline', color: theme.colors.semantic.expense, onPress: handleClearData },
           ].map((item) => (
             <Pressable
@@ -305,11 +646,34 @@ export default function SettingsScreen() {
           </View>
         </Animated.View>
 
-        <View style={{ height: 100 }} />
+        {/* AdMob Banner - Inline */}
+        <View style={{ alignItems: 'center', marginTop: 12, marginBottom: 40 }}>
+          <BannerAd 
+            unitId={BANNER_AD_UNIT_ID} 
+            size={BannerAdSize.MEDIUM_RECTANGLE} 
+            requestOptions={{ requestNonPersonalizedAdsOnly: true }} 
+          />
+        </View>
+        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {showConfetti && (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <ConfettiCannon
+            count={100}
+            origin={{ x: width / 2, y: -20 }}
+            autoStart={true}
+            fadeOut={true}
+            fallSpeed={3000}
+            explosionSpeed={350}
+          />
+        </View>
+      )}
     </View>
   );
 }
+
+const { width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -338,8 +702,8 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 12, letterSpacing: 1, marginBottom: 10 },
 
   // Theme Row
-  themeRow: { flexDirection: 'row', gap: 8 },
-  themeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12 },
+  themeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  themeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12 },
   themeBtnText: { fontSize: 13 },
 
   // Setting Row
@@ -348,6 +712,7 @@ const styles = StyleSheet.create({
   settingRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   settingLabel: { fontSize: 15 },
   settingValue: { fontSize: 14 },
+  settingIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
 
   // Currency Picker
   pickerList: { borderRadius: 14, marginTop: 4, overflow: 'hidden' },

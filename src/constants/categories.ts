@@ -22,6 +22,7 @@ export const expenseCategories: Category[] = [
   { id: 'subscriptions', name: 'Subscriptions', icon: 'card-outline', color: categoryColors.subscriptions, type: 'expense', isCustom: false },
   { id: 'fitness', name: 'Fitness', icon: 'barbell-outline', color: categoryColors.fitness, type: 'expense', isCustom: false },
   { id: 'gifts', name: 'Gifts', icon: 'gift-outline', color: categoryColors.gifts, type: 'expense', isCustom: false },
+  { id: 'savings', name: 'Savings & Investments', icon: 'wallet-outline', color: '#10B981', type: 'expense', isCustom: false },
   { id: 'other_expense', name: 'Other', icon: 'ellipsis-horizontal-circle-outline', color: categoryColors.other, type: 'expense', isCustom: false },
 ];
 

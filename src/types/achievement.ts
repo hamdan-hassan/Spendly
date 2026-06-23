@@ -21,12 +21,7 @@ export interface UserAchievement {
   unlockedAt: string | null;
 }
 
-export type UserLevel =
-  | 'beginner_saver'
-  | 'smart_budgeter'
-  | 'finance_explorer'
-  | 'wealth_builder'
-  | 'money_master';
+export type UserLevel = `level_${number}`;
 
 export interface GamificationState {
   xp: number;
@@ -38,6 +33,7 @@ export interface GamificationState {
     lastBudgetDate: string | null;
   };
   achievements: UserAchievement[];
+  purchasedThemes: string[];
 }
 
 export interface LevelDefinition {

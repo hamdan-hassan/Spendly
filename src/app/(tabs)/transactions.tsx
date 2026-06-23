@@ -10,11 +10,14 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
+import { ThemeIcon } from '@/components/ThemeIcon';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, FadeIn, Layout } from 'react-native-reanimated';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { useThemeContext } from '@/theme';
+import { useAccountStore } from '@/store/useAccountStore';
 import { useTransactionStore } from '@/store/useTransactionStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useHaptics } from '@/hooks/useHaptics';
@@ -32,10 +35,19 @@ export default function TransactionsScreen() {
 
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [showPicker, setShowPicker] = useState<'start' | 'end' | null>(null);
 
-  const transactions = useTransactionStore((s) => s.transactions);
+  const accountStore = useAccountStore();
+  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
+
+  const rawTransactions = useTransactionStore((s) => s.transactions);
+  const transactions = useMemo(() => rawTransactions.filter(t => t.accountId === accountStore.activeAccountId), [rawTransactions, accountStore.activeAccountId]);
+  
   const deleteTransaction = useTransactionStore((s) => s.deleteTransaction);
-  const currencySymbol = useSettingsStore((s) => s.currencySymbol);
 
   const filteredTransactions = useMemo(() => {
     let txns = [...transactions];
@@ -55,12 +67,26 @@ export default function TransactionsScreen() {
           t.amount.toString().includes(q),
       );
     }
+    
+    // Date Filters
+    if (startDate) {
+      txns = txns.filter(t => new Date(t.date).getTime() >= startDate.getTime());
+    }
+    if (endDate) {
+      // Ensure the end date covers the whole day by adding 24 hours
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      txns = txns.filter(t => new Date(t.date).getTime() <= endOfDay.getTime());
+    }
 
     // Sort by date descending
     txns.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return txns;
   }, [transactions, filter, searchQuery]);
+
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
 
   // Group transactions by date sections
   const sections = useMemo(() => {
@@ -85,6 +111,16 @@ export default function TransactionsScreen() {
 
     return items;
   }, [filteredTransactions]);
+
+  const paginatedSections = useMemo(() => {
+    return sections.slice(0, page * PAGE_SIZE);
+  }, [sections, page]);
+
+  const loadMore = useCallback(() => {
+    if (page * PAGE_SIZE < sections.length) {
+      setPage((p) => p + 1);
+    }
+  }, [page, sections.length]);
 
   const handleDelete = useCallback(
     (id: string) => {
@@ -124,7 +160,7 @@ export default function TransactionsScreen() {
           style={[styles.txnItem, { backgroundColor: theme.colors.bg.secondary }]}
         >
           <View style={[styles.txnIcon, { backgroundColor: (category?.color ?? '#6B7280') + '15' }]}>
-            <Ionicons
+            <ThemeIcon
               name={(category?.icon as any) ?? 'ellipse-outline'}
               size={20}
               color={category?.color ?? '#6B7280'}
@@ -149,6 +185,9 @@ export default function TransactionsScreen() {
           >
             {isExpense ? '-' : '+'}{formatCurrency(txn.amount, currencySymbol)}
           </Text>
+          <Pressable onPress={() => handleDelete(txn.id)} style={{ padding: 4, marginLeft: 4 }}>
+            <Ionicons name="ellipsis-vertical" size={18} color={theme.colors.text.tertiary} />
+          </Pressable>
         </Pressable>
       );
     },
@@ -180,6 +219,34 @@ export default function TransactionsScreen() {
           )}
         </View>
 
+        {/* Date Filters */}
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+          <Pressable
+            onPress={() => setShowPicker('start')}
+            style={[styles.filterBtn, { backgroundColor: startDate ? theme.colors.accent.primary : theme.colors.bg.secondary, flex: 1, alignItems: 'center' }]}
+          >
+            <Text style={[styles.filterText, { color: startDate ? (theme.mode === 'frutiger-aero' ? theme.colors.text.primary : '#FFFFFF') : theme.colors.text.secondary }]}>
+              {startDate ? `From: ${startDate.toLocaleDateString()}` : 'Start Date'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setShowPicker('end')}
+            style={[styles.filterBtn, { backgroundColor: endDate ? theme.colors.accent.primary : theme.colors.bg.secondary, flex: 1, alignItems: 'center' }]}
+          >
+            <Text style={[styles.filterText, { color: endDate ? (theme.mode === 'frutiger-aero' ? theme.colors.text.primary : '#FFFFFF') : theme.colors.text.secondary }]}>
+              {endDate ? `To: ${endDate.toLocaleDateString()}` : 'End Date'}
+            </Text>
+          </Pressable>
+          {(startDate || endDate) && (
+            <Pressable
+              onPress={() => { setStartDate(null); setEndDate(null); }}
+              style={[styles.filterBtn, { backgroundColor: theme.colors.semantic.expense, alignItems: 'center', justifyContent: 'center' }]}
+            >
+              <Ionicons name="close" size={16} color="#FFFFFF" />
+            </Pressable>
+          )}
+        </View>
+
         {/* Filter Tabs */}
         <View style={styles.filterRow}>
           {(['all', 'expense', 'income'] as FilterType[]).map((f) => (
@@ -197,7 +264,7 @@ export default function TransactionsScreen() {
                 style={[
                   styles.filterText,
                   {
-                    color: filter === f ? '#FFFFFF' : theme.colors.text.secondary,
+                    color: filter === f ? (theme.mode === 'frutiger-aero' ? theme.colors.text.primary : '#FFFFFF') : theme.colors.text.secondary,
                     fontFamily: 'Inter_500Medium',
                   },
                 ]}
@@ -211,8 +278,10 @@ export default function TransactionsScreen() {
 
       {/* Transaction List */}
       <FlashList
-        data={sections}
+        data={paginatedSections}
         renderItem={renderItem as any}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
@@ -222,19 +291,35 @@ export default function TransactionsScreen() {
               No transactions found
             </Text>
             <Text style={[styles.emptyText, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
-              {searchQuery ? 'Try a different search' : 'Add your first transaction'}
+              {searchQuery || startDate || endDate ? 'Try a different filter' : 'Add your first transaction'}
             </Text>
           </View>
         }
         getItemType={(item) => ('type' in item && item.type === 'header' ? 'header' : 'transaction')}
       />
 
+      {/* Date Picker Modal */}
+      {showPicker && (
+        <DateTimePicker
+          value={showPicker === 'start' ? (startDate || new Date()) : (endDate || new Date())}
+          mode="date"
+          display="default"
+          onChange={(event, selectedDate) => {
+            setShowPicker(null);
+            if (selectedDate) {
+              if (showPicker === 'start') setStartDate(selectedDate);
+              else setEndDate(selectedDate);
+            }
+          }}
+        />
+      )}
+
       {/* FAB */}
       <Pressable
         onPress={() => { haptics.medium(); router.push('/transaction/add' as any); }}
         style={[styles.fab, { backgroundColor: theme.colors.accent.primary, bottom: Platform.OS === 'ios' ? 100 : 80 }]}
       >
-        <Ionicons name="add" size={28} color="#FFFFFF" />
+        <Ionicons name="add" size={28} color={theme.mode === 'frutiger-aero' ? theme.colors.text.primary : '#FFFFFF'} />
       </Pressable>
     </View>
   );

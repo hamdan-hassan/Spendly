@@ -8,6 +8,7 @@ export type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'mobile_money' |
 
 export interface Transaction {
   id: string;
+  accountId?: string; // Optional for backward compatibility before migration
   type: TransactionType;
   amount: number;
   categoryId: string;

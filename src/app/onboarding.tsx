@@ -22,8 +22,9 @@ import { useBudgetStore } from '@/store/useBudgetStore';
 import { useSavingsStore } from '@/store/useSavingsStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { detectUserCurrency } from '@/services/currencyDetection';
-import { currencies } from '@/constants/currencies';
+import { currencies, searchCurrencies } from '@/constants/currencies';
 import { generateSeedTransactions, generateSeedBudgets, generateSeedSavingsGoals } from '@/utils/seedData';
+import { importDataFromJSON } from '@/services/export';
 import type { CurrencyInfo } from '@/types/settings';
 
 const { width, height } = Dimensions.get('window');
@@ -67,7 +68,9 @@ export default function OnboardingScreen() {
   const [userName, setUserName] = useState('');
   const [detectedCurrency, setDetectedCurrency] = useState<CurrencyInfo | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState<CurrencyInfo | null>(null);
-  const [loadingSeedData, setLoadingSeedData] = useState(false);
+  const [currencySearch, setCurrencySearch] = useState('');
+
+  const filteredCurrencies = currencySearch ? searchCurrencies(currencySearch) : currencies;
 
   const setOnboardingComplete = useSettingsStore((s) => s.setOnboardingComplete);
   const setUserNameStore = useSettingsStore((s) => s.setUserName);
@@ -95,7 +98,7 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleComplete = async (withSeedData: boolean) => {
+  const handleComplete = async () => {
     haptics.success();
 
     if (userName.trim()) {
@@ -104,53 +107,6 @@ export default function OnboardingScreen() {
 
     if (selectedCurrency) {
       setCurrency(selectedCurrency.code, selectedCurrency.symbol, selectedCurrency.locale);
-    }
-
-    if (withSeedData) {
-      setLoadingSeedData(true);
-      // Generate and load seed data
-      const seedTxns = generateSeedTransactions();
-      const seedBudgets = generateSeedBudgets();
-      const seedGoals = generateSeedSavingsGoals();
-
-      const txnStore = useTransactionStore.getState();
-      seedTxns.forEach((t) => {
-        txnStore.addTransaction({
-          type: t.type,
-          amount: t.amount,
-          categoryId: t.categoryId,
-          note: t.note,
-          date: t.date,
-          paymentMethod: t.paymentMethod,
-        });
-      });
-
-      const budgetStore = useBudgetStore.getState();
-      seedBudgets.forEach((b) => {
-        const created = budgetStore.addBudget({
-          name: b.name,
-          categoryId: b.categoryId,
-          amount: b.amount,
-          period: b.period,
-        });
-        budgetStore.updateBudgetSpending(created.id, b.spent);
-      });
-
-      const savingsStore = useSavingsStore.getState();
-      seedGoals.forEach((g) => {
-        const created = savingsStore.addGoal({
-          name: g.name,
-          targetAmount: g.targetAmount,
-          deadline: g.deadline,
-          icon: g.icon,
-          color: g.color,
-        });
-        g.contributions.forEach((c) => {
-          savingsStore.addContribution(created.id, c.amount, c.note);
-        });
-      });
-
-      setLoadingSeedData(false);
     }
 
     setOnboardingComplete();
@@ -163,7 +119,7 @@ export default function OnboardingScreen() {
         <View style={[styles.setupContent, { paddingTop: insets.top + 40 }]}>
           <Animated.View entering={FadeInDown.delay(100).duration(600)}>
             <Text style={[styles.setupTitle, { color: theme.colors.text.primary, fontFamily: 'Inter_700Bold' }]}>
-              Let's get started
+              Let&apos;s get started
             </Text>
             <Text style={[styles.setupSubtitle, { color: theme.colors.text.secondary, fontFamily: 'Inter_400Regular' }]}>
               Just a couple of things to personalize your experience
@@ -186,65 +142,98 @@ export default function OnboardingScreen() {
           </Animated.View>
 
           {/* Currency */}
-          <Animated.View entering={FadeInDown.delay(300).duration(600)} style={styles.setupField}>
-            <Text style={[styles.setupLabel, { color: theme.colors.text.secondary, fontFamily: 'Inter_500Medium' }]}>
-              Your Currency
-            </Text>
-            {detectedCurrency && (
-              <View style={[styles.detectedCard, { backgroundColor: theme.colors.accent.primaryMuted }]}>
-                <Ionicons name="location-outline" size={16} color={theme.colors.accent.primary} />
-                <Text style={[styles.detectedText, { color: theme.colors.accent.primary, fontFamily: 'Inter_500Medium' }]}>
-                  Detected: {detectedCurrency.flag} {detectedCurrency.name} ({detectedCurrency.symbol})
+          <Animated.View entering={FadeInDown.delay(300).duration(600)} style={[styles.setupField, { flex: 1, marginBottom: 12 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={[styles.setupLabel, { color: theme.colors.text.secondary, fontFamily: 'Inter_500Medium', marginBottom: 0 }]}>
+                Your Currency
+              </Text>
+              {selectedCurrency ? (
+                <Text style={{ fontSize: 12, color: theme.colors.accent.primary, fontFamily: 'Inter_600SemiBold' }}>
+                  Selected: {selectedCurrency.flag} {selectedCurrency.code}
                 </Text>
-              </View>
-            )}
-            <View style={styles.currencyGrid}>
-              {(detectedCurrency
-                ? [detectedCurrency, ...currencies.filter((c) => c.code !== detectedCurrency.code).slice(0, 11)]
-                : currencies.slice(0, 12)
-              ).map((c) => (
+              ) : detectedCurrency ? (
+                <Text style={{ fontSize: 12, color: theme.colors.text.tertiary, fontFamily: 'Inter_500Medium' }}>
+                  Detected: {detectedCurrency.flag} {detectedCurrency.code}
+                </Text>
+              ) : null}
+            </View>
+
+            <View style={[styles.searchBar, { backgroundColor: theme.colors.bg.secondary, marginBottom: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+              <Ionicons name="search" size={18} color={theme.colors.text.tertiary} />
+              <TextInput
+                style={{ flex: 1, color: theme.colors.text.primary, fontFamily: 'Inter_400Regular', fontSize: 15, padding: 0 }}
+                placeholder="Search currency or country..."
+                placeholderTextColor={theme.colors.text.tertiary}
+                value={currencySearch}
+                onChangeText={setCurrencySearch}
+              />
+            </View>
+
+            <FlatList
+              data={filteredCurrencies}
+              keyExtractor={(item) => item.code}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8, paddingBottom: 10 }}
+              renderItem={({ item: c }) => (
                 <Pressable
-                  key={c.code}
                   onPress={() => { haptics.selection(); setSelectedCurrency(c); }}
                   style={[
-                    styles.currencyBtn,
+                    styles.currencyListItem,
                     {
                       backgroundColor: selectedCurrency?.code === c.code ? theme.colors.accent.primaryMuted : theme.colors.bg.secondary,
                       borderColor: selectedCurrency?.code === c.code ? theme.colors.accent.primary : 'transparent',
                       borderWidth: 1.5,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      padding: 12,
+                      borderRadius: 12,
+                      gap: 12
                     },
                   ]}
                 >
-                  <Text style={styles.currencyFlag}>{c.flag}</Text>
-                  <Text style={[styles.currencyCode, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }]}>
-                    {c.code}
-                  </Text>
-                  <Text style={[styles.currencySymbol, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
-                    {c.symbol}
-                  </Text>
+                  <Text style={{ fontSize: 24 }}>{c.flag}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold', fontSize: 15 }}>
+                      {c.name}
+                    </Text>
+                    <Text style={{ color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular', fontSize: 13 }}>
+                      {c.code} · {c.symbol}
+                    </Text>
+                  </View>
+                  {selectedCurrency?.code === c.code && (
+                    <Ionicons name="checkmark-circle" size={20} color={theme.colors.accent.primary} />
+                  )}
                 </Pressable>
-              ))}
-            </View>
+              )}
+            />
           </Animated.View>
 
           {/* Action Buttons */}
           <Animated.View entering={FadeInDown.delay(400).duration(600)} style={styles.actionSection}>
             <Pressable
-              onPress={() => handleComplete(true)}
+              onPress={() => handleComplete()}
               style={[styles.primaryBtn, { backgroundColor: theme.colors.accent.primary }]}
-              disabled={loadingSeedData}
             >
-              <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
               <Text style={[styles.primaryBtnText, { fontFamily: 'Inter_600SemiBold' }]}>
-                {loadingSeedData ? 'Loading...' : 'Start with Sample Data'}
+                Get Started
               </Text>
             </Pressable>
+
             <Pressable
-              onPress={() => handleComplete(false)}
-              style={[styles.secondaryBtn, { backgroundColor: theme.colors.bg.secondary }]}
+              onPress={async () => {
+                haptics.selection();
+                const success = await importDataFromJSON();
+                if (success) {
+                  setOnboardingComplete();
+                  router.replace('/(tabs)');
+                }
+              }}
+              style={styles.secondaryBtn}
             >
-              <Text style={[styles.secondaryBtnText, { color: theme.colors.text.secondary, fontFamily: 'Inter_500Medium' }]}>
-                Start Fresh
+              <Ionicons name="cloud-download-outline" size={18} color={theme.colors.text.tertiary} style={{ marginRight: 6 }} />
+              <Text style={[styles.secondaryBtnText, { color: theme.colors.text.tertiary, fontFamily: 'Inter_500Medium' }]}>
+                Restore from Backup
               </Text>
             </Pressable>
           </Animated.View>
@@ -396,6 +385,9 @@ const styles = StyleSheet.create({
   currencyCode: { fontSize: 13 },
   currencySymbol: { fontSize: 13 },
 
+  searchBar: {},
+  currencyListItem: {},
+
   actionSection: { marginTop: 'auto', paddingBottom: 20, gap: 10 },
   primaryBtn: {
     flexDirection: 'row',
@@ -407,6 +399,7 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: '#FFFFFF', fontSize: 16 },
   secondaryBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,

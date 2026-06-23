@@ -4,6 +4,7 @@
 
 export interface SavingsGoal {
   id: string;
+  accountId?: string; // Optional for backward compatibility before migration
   name: string;
   targetAmount: number;
   currentAmount: number;

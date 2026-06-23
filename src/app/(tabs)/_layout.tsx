@@ -5,11 +5,13 @@
  */
 
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Platform, StyleSheet, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ThemeIcon } from '@/components/ThemeIcon';
 import { useThemeContext } from '@/theme';
 import { useHaptics } from '@/hooks/useHaptics';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import Animated, { useAnimatedStyle, withSpring, useSharedValue, withTiming } from 'react-native-reanimated';
 
 type TabIconName = 'home' | 'swap-horizontal' | 'wallet' | 'bar-chart' | 'settings';
@@ -25,6 +27,11 @@ const TAB_ICONS: Record<string, TabIconName> = {
 export default function TabLayout() {
   const theme = useThemeContext();
   const haptics = useHaptics();
+  const hasCompletedOnboarding = useSettingsStore((s) => s.hasCompletedOnboarding);
+
+  if (!hasCompletedOnboarding) {
+    return <Redirect href="/onboarding" />;
+  }
 
   return (
     <Tabs
@@ -32,13 +39,20 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: theme.colors.tabBar,
-          borderTopColor: theme.colors.border.default,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
-          paddingTop: 8,
+          borderTopWidth: 0,
+          height: 64,
+          paddingBottom: 0,
+          paddingTop: 0,
           position: 'absolute',
-          elevation: 0,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.1,
+          shadowRadius: 12,
+          borderRadius: 32,
+          left: 20,
+          right: 20,
+          bottom: Platform.OS === 'ios' ? 32 : 16,
         },
         tabBarActiveTintColor: theme.colors.accent.primary,
         tabBarInactiveTintColor: theme.colors.text.tertiary,
@@ -55,7 +69,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={22} color={color} />
+            <ThemeIcon name="home-outline" size={22} color={color} />
           ),
         }}
         listeners={{
@@ -67,7 +81,7 @@ export default function TabLayout() {
         options={{
           title: 'Transactions',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="swap-horizontal-outline" size={22} color={color} />
+            <ThemeIcon name="swap-horizontal-outline" size={22} color={color} />
           ),
         }}
         listeners={{
@@ -79,7 +93,7 @@ export default function TabLayout() {
         options={{
           title: 'Budgets',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="wallet-outline" size={22} color={color} />
+            <ThemeIcon name="wallet-outline" size={22} color={color} />
           ),
         }}
         listeners={{
@@ -91,7 +105,7 @@ export default function TabLayout() {
         options={{
           title: 'Analytics',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bar-chart-outline" size={22} color={color} />
+            <ThemeIcon name="bar-chart-outline" size={22} color={color} />
           ),
         }}
         listeners={{
@@ -103,7 +117,7 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={22} color={color} />
+            <ThemeIcon name="settings-outline" size={22} color={color} />
           ),
         }}
         listeners={{

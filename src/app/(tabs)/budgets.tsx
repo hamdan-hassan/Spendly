@@ -6,7 +6,7 @@
 
 import React, { useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Pressable, Dimensions,
+  View, Text, ScrollView, StyleSheet, Pressable, Dimensions, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -15,8 +15,10 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useThemeContext, gradients } from '@/theme';
+import { useAccountStore } from '@/store/useAccountStore';
 import { useBudgetStore } from '@/store/useBudgetStore';
 import { useSavingsStore } from '@/store/useSavingsStore';
+import { useTransactionStore } from '@/store/useTransactionStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { formatCurrency } from '@/utils/formatCurrency';
@@ -29,13 +31,66 @@ export default function BudgetsScreen() {
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
 
-  const currencySymbol = useSettingsStore((s) => s.currencySymbol);
+  const accountStore = useAccountStore();
+  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
+  
   const currentMonth = getCurrentMonth();
-  const budgets = useBudgetStore((s) => s.getBudgetsByMonth(currentMonth));
-  const totalBudgeted = useBudgetStore((s) => s.getTotalBudgeted(currentMonth));
-  const totalSpent = useBudgetStore((s) => s.getTotalSpent(currentMonth));
-  const activeGoals = useSavingsStore((s) => s.getActiveGoals());
-  const completedGoals = useSavingsStore((s) => s.getCompletedGoals());
+  
+  const rawBudgets = useBudgetStore((s) => s.budgets);
+  const deleteBudget = useBudgetStore((s) => s.deleteBudget);
+  const rawGoals = useSavingsStore((s) => s.goals);
+  const deleteGoal = useSavingsStore((s) => s.deleteGoal);
+  const rawTransactions = useTransactionStore((s) => s.transactions);
+
+  // Filter all data by active account
+  const allBudgets = useMemo(() => rawBudgets.filter(b => b.accountId === accountStore.activeAccountId), [rawBudgets, accountStore.activeAccountId]);
+  const allGoals = useMemo(() => rawGoals.filter(g => g.accountId === accountStore.activeAccountId), [rawGoals, accountStore.activeAccountId]);
+  const transactions = useMemo(() => rawTransactions.filter(t => t.accountId === accountStore.activeAccountId), [rawTransactions, accountStore.activeAccountId]);
+
+  const handleDeleteBudget = React.useCallback((id: string) => {
+    Alert.alert('Delete Budget', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => { haptics.medium(); deleteBudget(id); } },
+    ]);
+  }, [deleteBudget, haptics]);
+
+  const handleDeleteGoal = React.useCallback((id: string) => {
+    Alert.alert('Delete Goal', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => { haptics.medium(); deleteGoal(id); } },
+    ]);
+  }, [deleteGoal, haptics]);
+
+  const budgets = useMemo(() => {
+    return allBudgets.filter((b) => b.month === currentMonth).map(budget => {
+      // Dynamically calculate spent from actual transactions
+      const spent = transactions
+        .filter(t => t.type === 'expense' && t.categoryId === budget.categoryId && t.date.startsWith(currentMonth))
+        .reduce((sum, t) => sum + t.amount, 0);
+      return { ...budget, spent };
+    });
+  }, [allBudgets, currentMonth, transactions]);
+
+  const totalBudgeted = useMemo(() => budgets.reduce((sum, b) => sum + b.amount, 0), [budgets]);
+  const totalSpent = useMemo(() => budgets.reduce((sum, b) => sum + b.spent, 0), [budgets]);
+  
+  const currentMonthTransactions = useMemo(() => 
+    transactions.filter(t => t.date.startsWith(currentMonth)),
+  [transactions, currentMonth]);
+
+  const totalIncome = useMemo(() => 
+    currentMonthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0),
+  [currentMonthTransactions]);
+
+  const totalExpenses = useMemo(() => 
+    currentMonthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0),
+  [currentMonthTransactions]);
+
+  const balance = totalIncome - totalExpenses;
+  
+  const activeGoals = useMemo(() => allGoals.filter((g) => !g.isCompleted), [allGoals]);
+  const completedGoals = useMemo(() => allGoals.filter((g) => g.isCompleted), [allGoals]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
@@ -47,7 +102,7 @@ export default function BudgetsScreen() {
           Budgets & Goals
         </Text>
 
-        {/* Budget Summary Card */}
+        {/* Monthly Overview Card */}
         <Animated.View entering={FadeInDown.delay(100).duration(600)}>
           <LinearGradient
             colors={gradients.ocean as [string, string]}
@@ -55,25 +110,25 @@ export default function BudgetsScreen() {
             end={{ x: 1, y: 1 }}
             style={styles.summaryCard}
           >
-            <Text style={styles.summaryLabel}>Monthly Budget</Text>
+            <Text style={styles.summaryLabel}>Monthly Overview</Text>
             <Text style={styles.summaryAmount}>
-              {formatCurrency(totalSpent, currencySymbol)} / {formatCurrency(totalBudgeted, currencySymbol)}
+              {formatCurrency(totalExpenses, currencySymbol)} {totalIncome > 0 ? `/ ${formatCurrency(totalIncome, currencySymbol)}` : 'Spent'}
             </Text>
             <View style={styles.summaryBar}>
               <View
                 style={[
                   styles.summaryBarFill,
                   {
-                    width: `${Math.min(100, totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0)}%`,
-                    backgroundColor: totalSpent > totalBudgeted ? '#F43F5E' : '#FFFFFF',
+                    width: `${Math.min(100, totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 100)}%`,
+                    backgroundColor: totalExpenses > totalIncome ? '#F43F5E' : '#FFFFFF',
                   },
                 ]}
               />
             </View>
             <Text style={styles.summarySubtext}>
-              {totalBudgeted > 0
-                ? `${formatCurrency(Math.max(0, totalBudgeted - totalSpent), currencySymbol)} remaining`
-                : 'No budgets set'}
+              {totalIncome > 0
+                ? `${formatCurrency(Math.max(0, balance), currencySymbol)} remaining balance`
+                : 'Add income to track your remaining balance'}
             </Text>
           </LinearGradient>
         </Animated.View>
@@ -138,6 +193,9 @@ export default function BudgetsScreen() {
                     <Text style={[styles.budgetPercent, { color, fontFamily: 'Inter_600SemiBold' }]}>
                       {Math.round(percentage * 100)}%
                     </Text>
+                    <Pressable onPress={() => handleDeleteBudget(budget.id)} style={{ padding: 4, marginLeft: 8 }}>
+                      <Ionicons name="ellipsis-vertical" size={18} color={theme.colors.text.tertiary} />
+                    </Pressable>
                   </View>
                   <View style={[styles.budgetBar, { backgroundColor: theme.colors.bg.tertiary }]}>
                     <View
@@ -194,41 +252,52 @@ export default function BudgetsScreen() {
                     entering={FadeInDown.delay(450 + i * 50).duration(500)}
                     style={[styles.goalCard, { backgroundColor: theme.colors.bg.secondary }]}
                   >
-                    <View style={styles.goalHeader}>
-                      <View style={[styles.goalIcon, { backgroundColor: goal.color + '15' }]}>
-                        <Ionicons name={goal.icon as any} size={22} color={goal.color} />
-                      </View>
-                      <View style={styles.goalInfo}>
-                        <Text style={[styles.goalName, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }]}>
-                          {goal.name}
+                    <Pressable onPress={() => router.push(`/savings/${goal.id}` as any)}>
+                      <View style={styles.goalHeader}>
+                        <View style={[styles.goalIcon, { backgroundColor: goal.color + '15' }]}>
+                          <Ionicons name={goal.icon as any} size={22} color={goal.color} />
+                        </View>
+                        <View style={styles.goalInfo}>
+                          <Text style={[styles.goalName, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }]}>
+                            {goal.name}
+                          </Text>
+                          <Text style={[styles.goalDeadline, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
+                            {daysLeft > 0 ? `${daysLeft} days left` : 'Overdue'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.goalPercent, { color: goal.color, fontFamily: 'Inter_700Bold' }]}>
+                          {Math.round(progress * 100)}%
                         </Text>
-                        <Text style={[styles.goalDeadline, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
-                          {daysLeft > 0 ? `${daysLeft} days left` : 'Overdue'}
+                        <Pressable onPress={() => handleDeleteGoal(goal.id)} style={{ padding: 4, marginLeft: 8 }}>
+                          <Ionicons name="ellipsis-vertical" size={18} color={theme.colors.text.tertiary} />
+                        </Pressable>
+                      </View>
+                      <View style={styles.goalAmounts}>
+                        <Text style={[styles.goalSaved, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }]}>
+                          {formatCurrency(goal.currentAmount, currencySymbol)}
+                        </Text>
+                        <Text style={[styles.goalTarget, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
+                          / {formatCurrency(goal.targetAmount, currencySymbol)}
                         </Text>
                       </View>
-                      <Text style={[styles.goalPercent, { color: goal.color, fontFamily: 'Inter_700Bold' }]}>
-                        {Math.round(progress * 100)}%
-                      </Text>
-                    </View>
-                    <View style={styles.goalAmounts}>
-                      <Text style={[styles.goalSaved, { color: theme.colors.text.primary, fontFamily: 'Inter_600SemiBold' }]}>
-                        {formatCurrency(goal.currentAmount, currencySymbol)}
-                      </Text>
-                      <Text style={[styles.goalTarget, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
-                        / {formatCurrency(goal.targetAmount, currencySymbol)}
-                      </Text>
-                    </View>
-                    <View style={[styles.goalBar, { backgroundColor: theme.colors.bg.tertiary }]}>
-                      <View
-                        style={[
-                          styles.goalBarFill,
-                          { width: `${Math.min(100, progress * 100)}%`, backgroundColor: goal.color },
-                        ]}
-                      />
-                    </View>
-                    <Text style={[styles.goalRemaining, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
-                      {formatCurrency(Math.max(0, goal.targetAmount - goal.currentAmount), currencySymbol)} remaining
-                    </Text>
+                      <View style={[styles.goalBar, { backgroundColor: theme.colors.bg.tertiary }]}>
+                        <View
+                          style={[
+                            styles.goalBarFill,
+                            { width: `${Math.min(100, progress * 100)}%`, backgroundColor: goal.color },
+                          ]}
+                        />
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                        <Text style={[styles.goalRemaining, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular', marginTop: 0 }]}>
+                          {formatCurrency(Math.max(0, goal.targetAmount - goal.currentAmount), currencySymbol)} remaining
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={{ color: theme.colors.accent.primary, fontSize: 12, fontFamily: 'Inter_500Medium' }}>Tap to add</Text>
+                          <Ionicons name="chevron-forward" size={14} color={theme.colors.accent.primary} style={{ marginLeft: 2 }} />
+                        </View>
+                      </View>
+                    </Pressable>
                   </Animated.View>
                 );
               })}

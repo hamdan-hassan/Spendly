@@ -20,10 +20,12 @@ export function formatCurrency(
   const prefix = isNegative ? '-' : '';
 
   if (compact && absAmount >= 1_000_000) {
-    return `${prefix}${symbol}${(absAmount / 1_000_000).toFixed(1)}M`;
+    const val = absAmount / 1_000_000;
+    return `${prefix}${symbol}${val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)}M`;
   }
   if (compact && absAmount >= 1_000) {
-    return `${prefix}${symbol}${(absAmount / 1_000).toFixed(1)}K`;
+    const val = absAmount / 1_000;
+    return `${prefix}${symbol}${val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)}K`;
   }
 
   const formatted = absAmount.toLocaleString('en-US', {

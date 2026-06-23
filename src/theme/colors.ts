@@ -256,3 +256,91 @@ export const lightColors: ThemeColors = {
   card: palette.white,
   inputBg: palette.gray100,
 };
+
+export const neonGoldColors: ThemeColors = {
+  bg: {
+    primary: '#050505',
+    secondary: '#111111',
+    tertiary: '#1A1A1A',
+    elevated: '#161616',
+    inverse: '#FFFFFF',
+  },
+  accent: {
+    primary: '#FFD700',
+    primaryMuted: 'rgba(255, 215, 0, 0.15)',
+    secondary: '#FFDF00',
+  },
+  semantic: {
+    income: '#00FF00',
+    incomeMuted: 'rgba(0, 255, 0, 0.15)',
+    expense: '#FF0033',
+    expenseMuted: 'rgba(255, 0, 51, 0.15)',
+    warning: '#FFA500',
+    warningMuted: 'rgba(255, 165, 0, 0.15)',
+    info: '#00FFFF',
+    infoMuted: 'rgba(0, 255, 255, 0.15)',
+    success: '#00FF00',
+    successMuted: 'rgba(0, 255, 0, 0.15)',
+  },
+  text: {
+    primary: '#F0F0F0',
+    secondary: '#A0A0A0',
+    tertiary: '#666666',
+    inverse: '#000000',
+    onAccent: '#000000',
+  },
+  border: {
+    default: 'rgba(255, 215, 0, 0.1)',
+    muted: 'rgba(255, 215, 0, 0.05)',
+    accent: 'rgba(255, 215, 0, 0.4)',
+  },
+  overlay: 'rgba(0, 0, 0, 0.8)',
+  skeleton: 'rgba(255, 215, 0, 0.1)',
+  tabBar: 'rgba(5, 5, 5, 0.95)',
+  card: '#111111',
+  inputBg: '#1A1A1A',
+};
+
+export const midnightBlueColors: ThemeColors = {
+  bg: {
+    primary: '#0B0F19',
+    secondary: '#111827',
+    tertiary: '#1F2937',
+    elevated: '#161F33',
+    inverse: '#FFFFFF',
+  },
+  accent: {
+    primary: '#06B6D4',
+    primaryMuted: 'rgba(6, 182, 212, 0.15)',
+    secondary: '#22D3EE',
+  },
+  semantic: {
+    income: '#10B981',
+    incomeMuted: 'rgba(16, 185, 129, 0.15)',
+    expense: '#F43F5E',
+    expenseMuted: 'rgba(244, 63, 94, 0.15)',
+    warning: '#F59E0B',
+    warningMuted: 'rgba(245, 158, 11, 0.15)',
+    info: '#3B82F6',
+    infoMuted: 'rgba(59, 130, 246, 0.15)',
+    success: '#10B981',
+    successMuted: 'rgba(16, 185, 129, 0.15)',
+  },
+  text: {
+    primary: '#F8FAFC',
+    secondary: '#94A3B8',
+    tertiary: '#475569',
+    inverse: '#0B0F19',
+    onAccent: '#FFFFFF',
+  },
+  border: {
+    default: 'rgba(6, 182, 212, 0.1)',
+    muted: 'rgba(6, 182, 212, 0.05)',
+    accent: 'rgba(6, 182, 212, 0.4)',
+  },
+  overlay: 'rgba(0, 0, 0, 0.7)',
+  skeleton: 'rgba(6, 182, 212, 0.1)',
+  tabBar: 'rgba(11, 15, 25, 0.95)',
+  card: '#111827',
+  inputBg: '#1F2937',
+};

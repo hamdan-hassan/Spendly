@@ -10,7 +10,6 @@ import { Platform } from 'react-native';
 // Configure notification handler
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
     shouldShowBanner: true,
@@ -48,7 +47,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 /**
  * Schedule a daily expense reminder.
  */
-export async function scheduleDailyReminder(hour: number = 20, minute: number = 0) {
+export async function scheduleDailyReminder(hour: number = 8, minute: number = 0) {
   // Cancel existing daily reminders
   await cancelNotificationsByTag('daily-reminder');
 
@@ -97,7 +96,7 @@ export async function sendSavingsReminder(goalName: string, remaining: number, c
 /**
  * Cancel notifications by identifier tag.
  */
-async function cancelNotificationsByTag(tag: string) {
+export async function cancelNotificationsByTag(tag: string) {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   for (const notification of scheduled) {
     if (notification.content.data?.type === tag) {

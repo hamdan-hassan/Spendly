@@ -15,6 +15,7 @@ interface SavingsState {
 
   // Actions
   addGoal: (data: {
+    accountId: string;
     name: string;
     targetAmount: number;
     deadline: string;
@@ -25,6 +26,10 @@ interface SavingsState {
   deleteGoal: (id: string) => void;
   addContribution: (goalId: string, amount: number, note?: string) => void;
   markCompleted: (id: string) => void;
+
+  // Multi-Account Support
+  convertCurrency: (accountId: string, multiplier: number) => void;
+  _assignToMainWallet: (mainWalletId: string) => void;
 
   // Queries
   getGoalById: (id: string) => SavingsGoal | undefined;
@@ -105,6 +110,38 @@ export const useSavingsStore = create<SavingsState>()(
               : g,
           ),
         }));
+      },
+
+      convertCurrency: (accountId, multiplier) => {
+        set((state) => ({
+          goals: state.goals.map((g) =>
+            g.accountId === accountId
+              ? {
+                  ...g,
+                  targetAmount: g.targetAmount * multiplier,
+                  currentAmount: g.currentAmount * multiplier,
+                  contributions: g.contributions.map((c) => ({
+                    ...c,
+                    amount: c.amount * multiplier,
+                  })),
+                }
+              : g
+          ),
+        }));
+      },
+
+      _assignToMainWallet: (mainWalletId) => {
+        set((state) => {
+          let modified = false;
+          const updated = state.goals.map((g) => {
+            if (!g.accountId) {
+              modified = true;
+              return { ...g, accountId: mainWalletId };
+            }
+            return g;
+          });
+          return modified ? { goals: updated } : state;
+        });
       },
 
       getGoalById: (id) => get().goals.find((g) => g.id === id),
