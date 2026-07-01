@@ -38,6 +38,8 @@ import { getCategoryById } from '@/constants/categories';
 import { getLevelForXP } from '@/constants/levels';
 import { exportDataAsPDF } from '@/services/export';
 import { generateDashboardGreeting } from '@/services/roastEngine';
+import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
+import { BANNER_AD_UNIT_ID } from '@/services/ads';
 
 const { width } = Dimensions.get('window');
 
@@ -637,6 +639,15 @@ export default function DashboardScreen() {
             </View>
           )}
         </Animated.View>
+
+        {/* AdMob Banner - Inline */}
+        <View style={{ alignItems: 'center', marginTop: 24, marginBottom: 40 }}>
+          <BannerAd 
+            unitId={BANNER_AD_UNIT_ID} 
+            size={BannerAdSize.MEDIUM_RECTANGLE} 
+            requestOptions={{ requestNonPersonalizedAdsOnly: true }} 
+          />
+        </View>
 
         <View style={{ height: 100 }} />
       </ScrollView>

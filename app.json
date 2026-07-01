@@ -3,12 +3,13 @@
     "name": "Spendly - Budget & Expense Tracker",
     "description": "Track daily expenses, manage your money, and achieve financial goals offline. The ultimate personal finance, budget planner, and daily expense tracker app.",
     "slug": "Spendly",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "spendly",
     "userInterfaceStyle": "automatic",
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#0A0E1A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

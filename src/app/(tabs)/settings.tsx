@@ -638,7 +638,7 @@ export default function SettingsScreen() {
               Spendly
             </Text>
             <Text style={[styles.version, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
-              Version 1.0.0
+              Version 1.0.1
             </Text>
             <Text style={[styles.aboutText, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
               Your premium personal finance companion

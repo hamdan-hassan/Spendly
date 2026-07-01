@@ -21,6 +21,7 @@ import { useTransactionStore } from '@/store/useTransactionStore';
 import { useBudgetStore } from '@/store/useBudgetStore';
 import { useSavingsStore } from '@/store/useSavingsStore';
 import { useHaptics } from '@/hooks/useHaptics';
+import { useAccountStore } from '@/store/useAccountStore';
 import { detectUserCurrency } from '@/services/currencyDetection';
 import { currencies, searchCurrencies } from '@/constants/currencies';
 import { generateSeedTransactions, generateSeedBudgets, generateSeedSavingsGoals } from '@/utils/seedData';
@@ -107,6 +108,15 @@ export default function OnboardingScreen() {
 
     if (selectedCurrency) {
       setCurrency(selectedCurrency.code, selectedCurrency.symbol, selectedCurrency.locale);
+      
+      // Update the main wallet that was created before onboarding finished
+      const accountStore = useAccountStore.getState();
+      if (accountStore.activeAccountId) {
+        accountStore.updateAccount(accountStore.activeAccountId, { 
+          currencyCode: selectedCurrency.code, 
+          currencySymbol: selectedCurrency.symbol 
+        });
+      }
     }
 
     setOnboardingComplete();
