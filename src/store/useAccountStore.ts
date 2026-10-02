@@ -61,7 +61,9 @@ export const useAccountStore = create<AccountState>()(
                 ? remaining.length > 0
                   ? remaining[0].id
                   : null
-                : state.activeAccountId,
+                : (state.activeAccountId && remaining.some((a) => a.id === state.activeAccountId))
+                  ? state.activeAccountId
+                  : (remaining.length > 0 ? remaining[0].id : null),
           };
         });
       },
@@ -71,8 +73,13 @@ export const useAccountStore = create<AccountState>()(
       _initializeMainWallet: (currencyCode, currencySymbol) => {
         const state = get();
         if (state.accounts.length > 0) {
-          // Already initialized
-          return state.accounts[0].id;
+          // Ensure activeAccountId is properly set to an existing account
+          if (!state.activeAccountId || !state.accounts.some((a) => a.id === state.activeAccountId)) {
+            const fallbackId = state.accounts[0].id;
+            set({ activeAccountId: fallbackId });
+            return fallbackId;
+          }
+          return state.activeAccountId;
         }
 
         const newId = generateId();

@@ -41,11 +41,18 @@ export default function TransactionsScreen() {
   const [showPicker, setShowPicker] = useState<'start' | 'end' | null>(null);
 
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const isPrimary = !activeAccountId || activeAccountId === accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
 
   const rawTransactions = useTransactionStore((s) => s.transactions);
-  const transactions = useMemo(() => rawTransactions.filter(t => t.accountId === accountStore.activeAccountId), [rawTransactions, accountStore.activeAccountId]);
+  const transactions = useMemo(() => 
+    rawTransactions.filter(t => 
+      t.accountId === activeAccountId || 
+      (isPrimary && (!t.accountId || !accountStore.accounts.some(a => a.id === t.accountId)))
+    ), 
+  [rawTransactions, activeAccountId, isPrimary, accountStore.accounts]);
   
   const deleteTransaction = useTransactionStore((s) => s.deleteTransaction);
 

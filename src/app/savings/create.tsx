@@ -49,7 +49,8 @@ export default function CreateSavingsGoalScreen() {
   const [deadlineMonths, setDeadlineMonths] = useState(3);
 
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
 
   const addGoal = useSavingsStore((s) => s.addGoal);
@@ -71,7 +72,7 @@ export default function CreateSavingsGoalScreen() {
       deadline: deadline.toISOString(),
       icon: selectedIcon,
       color: selectedColor,
-      accountId: accountStore.activeAccountId || '',
+      accountId: activeAccountId || '',
     });
 
     onSavingsGoalCreated();

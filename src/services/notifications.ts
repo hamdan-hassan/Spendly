@@ -56,6 +56,7 @@ export async function scheduleDailyReminder(hour: number = 8, minute: number = 0
       title: '💰 Spendly Reminder',
       body: 'Don\'t forget to log your expenses today!',
       data: { type: 'daily-reminder' },
+      ...(Platform.OS === 'android' ? { channelId: 'default' } : {}),
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -74,6 +75,7 @@ export async function sendBudgetWarning(budgetName: string, percentage: number) 
       title: '⚠️ Budget Alert',
       body: `You've used ${percentage}% of your ${budgetName} budget. Spend carefully!`,
       data: { type: 'budget-warning' },
+      ...(Platform.OS === 'android' ? { channelId: 'default' } : {}),
     },
     trigger: null, // Send immediately
   });
@@ -88,6 +90,7 @@ export async function sendSavingsReminder(goalName: string, remaining: number, c
       title: '🎯 Savings Goal',
       body: `You're ${currencySymbol}${remaining.toFixed(2)} away from "${goalName}". Keep going!`,
       data: { type: 'savings-reminder' },
+      ...(Platform.OS === 'android' ? { channelId: 'default' } : {}),
     },
     trigger: null,
   });

@@ -45,7 +45,8 @@ export default function AddTransactionScreen() {
   const [aiMessage, setAiMessage] = useState<{title: string, message: string} | null>(null);
 
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
   
   const addTransaction = useTransactionStore((s) => s.addTransaction);
@@ -84,7 +85,7 @@ export default function AddTransactionScreen() {
       note,
       date: new Date().toISOString(),
       paymentMethod,
-      accountId: accountStore.activeAccountId || '',
+      accountId: activeAccountId || '',
     });
 
     if (type === 'expense') {
@@ -94,14 +95,14 @@ export default function AddTransactionScreen() {
       const settings = useSettingsStore.getState();
       if ((settings.notifications as any)?.budgetAlerts) {
         const activeMonth = getCurrentMonth();
-        const activeAccountBudgets = useBudgetStore.getState().budgets.filter(b => b.accountId === accountStore.activeAccountId && b.month === activeMonth);
+        const activeAccountBudgets = useBudgetStore.getState().budgets.filter(b => (b.accountId === activeAccountId || (!b.accountId && activeAccountId === accountStore.accounts[0]?.id)) && b.month === activeMonth);
         
         // Find budget for this category or the overall budget (categoryId is null)
         const budget = activeAccountBudgets.find(b => b.categoryId === categoryId) || activeAccountBudgets.find(b => !b.categoryId);
         
         if (budget) {
           // Calculate current spent plus this new transaction
-          const activeAccountTransactions = useTransactionStore.getState().transactions.filter(t => t.accountId === accountStore.activeAccountId && t.date.startsWith(activeMonth));
+          const activeAccountTransactions = useTransactionStore.getState().transactions.filter(t => (t.accountId === activeAccountId || (!t.accountId && activeAccountId === accountStore.accounts[0]?.id)) && t.date.startsWith(activeMonth));
           const spent = activeAccountTransactions
             .filter(t => t.type === 'expense' && (budget.categoryId ? t.categoryId === budget.categoryId : true))
             .reduce((sum, t) => sum + t.amount, 0);
@@ -132,7 +133,7 @@ export default function AddTransactionScreen() {
         note,
         date: new Date().toISOString(),
         paymentMethod,
-        accountId: accountStore.activeAccountId || '',
+        accountId: activeAccountId || '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }, currencySymbol);
@@ -211,7 +212,14 @@ export default function AddTransactionScreen() {
               {currencySymbol}
             </Text>
             <TextInput
-              style={[styles.amountInput, { color: theme.colors.text.primary, fontFamily: 'Inter_700Bold' }]}
+              style={[
+                styles.amountInput,
+                {
+                  color: theme.colors.text.primary,
+                  fontFamily: 'Inter_700Bold',
+                  fontSize: amount.length > 9 ? 30 : amount.length > 6 ? 38 : 48,
+                },
+              ]}
               placeholder="0.00"
               placeholderTextColor={theme.colors.text.tertiary}
               value={amount}
@@ -241,9 +249,6 @@ export default function AddTransactionScreen() {
               }}
               keyboardType="decimal-pad"
               autoFocus
-              adjustsFontSizeToFit
-              minimumFontScale={0.3}
-              numberOfLines={1}
             />
           </Animated.View>
 

@@ -32,7 +32,9 @@ export default function BudgetsScreen() {
   const haptics = useHaptics();
 
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const isPrimary = !activeAccountId || activeAccountId === accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
   
   const currentMonth = getCurrentMonth();
@@ -43,10 +45,27 @@ export default function BudgetsScreen() {
   const deleteGoal = useSavingsStore((s) => s.deleteGoal);
   const rawTransactions = useTransactionStore((s) => s.transactions);
 
-  // Filter all data by active account
-  const allBudgets = useMemo(() => rawBudgets.filter(b => b.accountId === accountStore.activeAccountId), [rawBudgets, accountStore.activeAccountId]);
-  const allGoals = useMemo(() => rawGoals.filter(g => g.accountId === accountStore.activeAccountId), [rawGoals, accountStore.activeAccountId]);
-  const transactions = useMemo(() => rawTransactions.filter(t => t.accountId === accountStore.activeAccountId), [rawTransactions, accountStore.activeAccountId]);
+  // Filter all data by active account with safe fallback for unassigned/primary transactions
+  const allBudgets = useMemo(() => 
+    rawBudgets.filter(b => 
+      b.accountId === activeAccountId || 
+      (isPrimary && (!b.accountId || !accountStore.accounts.some(a => a.id === b.accountId)))
+    ), 
+  [rawBudgets, activeAccountId, isPrimary, accountStore.accounts]);
+
+  const allGoals = useMemo(() => 
+    rawGoals.filter(g => 
+      g.accountId === activeAccountId || 
+      (isPrimary && (!g.accountId || !accountStore.accounts.some(a => a.id === g.accountId)))
+    ), 
+  [rawGoals, activeAccountId, isPrimary, accountStore.accounts]);
+
+  const transactions = useMemo(() => 
+    rawTransactions.filter(t => 
+      t.accountId === activeAccountId || 
+      (isPrimary && (!t.accountId || !accountStore.accounts.some(a => a.id === t.accountId)))
+    ), 
+  [rawTransactions, activeAccountId, isPrimary, accountStore.accounts]);
 
   const handleDeleteBudget = React.useCallback((id: string) => {
     Alert.alert('Delete Budget', 'Are you sure?', [
@@ -63,10 +82,31 @@ export default function BudgetsScreen() {
   }, [deleteGoal, haptics]);
 
   const budgets = useMemo(() => {
-    return allBudgets.filter((b) => b.month === currentMonth).map(budget => {
+    // Current month budgets
+    const currentMonthBudgets = allBudgets.filter((b) => b.month === currentMonth);
+    const existingCategoryIds = new Set(currentMonthBudgets.map(b => b.categoryId));
+    
+    // Carry over recurring budgets from previous months if none set for this month
+    const carriedOverBudgets = allBudgets
+      .filter((b) => !b.month || b.month !== currentMonth)
+      .filter((b) => !existingCategoryIds.has(b.categoryId));
+    
+    const seenCategories = new Set(existingCategoryIds);
+    const uniqueCarriedOver: typeof allBudgets = [];
+    for (const b of carriedOverBudgets) {
+      const key = b.categoryId || b.name;
+      if (!seenCategories.has(key)) {
+        seenCategories.add(key);
+        uniqueCarriedOver.push({ ...b, month: currentMonth });
+      }
+    }
+
+    const effectiveBudgets = [...currentMonthBudgets, ...uniqueCarriedOver];
+
+    return effectiveBudgets.map(budget => {
       // Dynamically calculate spent from actual transactions
       const spent = transactions
-        .filter(t => t.type === 'expense' && t.categoryId === budget.categoryId && t.date.startsWith(currentMonth))
+        .filter(t => t.type === 'expense' && (budget.categoryId ? t.categoryId === budget.categoryId : true) && t.date.startsWith(currentMonth))
         .reduce((sum, t) => sum + t.amount, 0);
       return { ...budget, spent };
     });
@@ -88,6 +128,10 @@ export default function BudgetsScreen() {
   [currentMonthTransactions]);
 
   const balance = totalIncome - totalExpenses;
+
+  const totalAccountBalance = useMemo(() => {
+    return transactions.reduce((acc, t) => acc + (t.type === 'income' ? t.amount : -t.amount), 0);
+  }, [transactions]);
   
   const activeGoals = useMemo(() => allGoals.filter((g) => !g.isCompleted), [allGoals]);
   const completedGoals = useMemo(() => allGoals.filter((g) => g.isCompleted), [allGoals]);
@@ -127,8 +171,10 @@ export default function BudgetsScreen() {
             </View>
             <Text style={styles.summarySubtext}>
               {totalIncome > 0
-                ? `${formatCurrency(Math.max(0, balance), currencySymbol)} remaining balance`
-                : 'Add income to track your remaining balance'}
+                ? `${formatCurrency(Math.max(0, balance), currencySymbol)} remaining this month`
+                : totalAccountBalance > 0
+                  ? `Total Balance: ${formatCurrency(totalAccountBalance, currencySymbol)} · Add this month's income to track budget`
+                  : 'Add income to track your remaining balance'}
             </Text>
           </LinearGradient>
         </Animated.View>

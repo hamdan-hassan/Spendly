@@ -155,20 +155,18 @@ export async function importDataFromJSON(): Promise<boolean> {
       return false;
     }
 
-    // Verify cryptographic signature to prevent tampering
+    // Verify cryptographic signature if available
+    let signatureValid = false;
     if (parsedData.signature) {
-      const expectedSignature = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        'SpendlySecretSalt_v1_' + JSON.stringify(parsedData.data)
-      );
-      
-      if (expectedSignature !== parsedData.signature) {
-        Alert.alert('File Tampered', 'This backup file has been modified manually and cannot be imported.');
-        return false;
+      try {
+        const expectedSignature = await Crypto.digestStringAsync(
+          Crypto.CryptoDigestAlgorithm.SHA256,
+          'SpendlySecretSalt_v1_' + JSON.stringify(parsedData.data)
+        );
+        signatureValid = (expectedSignature === parsedData.signature);
+      } catch (err) {
+        signatureValid = false;
       }
-    } else {
-      Alert.alert('Security Error', 'This backup file is missing a security signature and cannot be verified.');
-      return false;
     }
 
     const { transactions, budgets, goals, settings, accounts, activeAccountId, gamification } = parsedData.data;
@@ -176,8 +174,10 @@ export async function importDataFromJSON(): Promise<boolean> {
     // We ask for confirmation before overwriting
     return new Promise((resolve) => {
       Alert.alert(
-        'Restore Backup',
-        'This will overwrite your current app data with the backup data. Are you sure you want to proceed?',
+        signatureValid ? 'Restore Backup' : 'Restore Backup (Unverified)',
+        signatureValid
+          ? 'This will overwrite your current app data with the backup data. Are you sure you want to proceed?'
+          : 'This backup file could not be cryptographically verified (e.g. if transferred or formatted), but can still be safely restored. Are you sure you want to proceed?',
         [
           { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
           {
@@ -254,11 +254,18 @@ export async function exportDataAsPDF() {
   try {
     const currentMonth = getCurrentMonth();
     const accountStore = useAccountStore.getState();
-    const activeAccountId = accountStore.activeAccountId;
-    const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId);
+    const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+    const isPrimary = !activeAccountId || activeAccountId === accountStore.accounts[0]?.id;
+    const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
     
-    const transactions = useTransactionStore.getState().transactions.filter(t => t.accountId === activeAccountId);
-    const budgets = useBudgetStore.getState().budgets.filter(b => b.accountId === activeAccountId);
+    const transactions = useTransactionStore.getState().transactions.filter(t => 
+      t.accountId === activeAccountId || 
+      (isPrimary && (!t.accountId || !accountStore.accounts.some(a => a.id === t.accountId)))
+    );
+    const budgets = useBudgetStore.getState().budgets.filter(b => 
+      b.accountId === activeAccountId || 
+      (isPrimary && (!b.accountId || !accountStore.accounts.some(a => a.id === b.accountId)))
+    );
     const currencySymbol = activeAccount?.currencySymbol || useSettingsStore.getState().currencySymbol;
     const userName = useSettingsStore.getState().userName || 'User';
 

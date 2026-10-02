@@ -89,6 +89,19 @@ export function getPreviousMonth(month: string): string {
 }
 
 /**
+ * Check if a date string belongs to a given YYYY-MM month in local time.
+ * Gracefully falls back to startsWith matching if parsing fails.
+ */
+export function isDateInMonth(dateStr: string, monthStr: string): boolean {
+  if (!dateStr || !monthStr) return false;
+  try {
+    return format(parseISO(dateStr), 'yyyy-MM') === monthStr;
+  } catch {
+    return dateStr.startsWith(monthStr);
+  }
+}
+
+/**
  * Get days remaining until a date.
  */
 export function getDaysRemaining(dateStr: string): number {

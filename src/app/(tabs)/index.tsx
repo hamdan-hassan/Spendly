@@ -50,7 +50,9 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = React.useState(false);
 
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const isPrimary = !activeAccountId || activeAccountId === accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
   const [showAccountSwitcher, setShowAccountSwitcher] = React.useState(false);
 
@@ -62,15 +64,44 @@ export default function DashboardScreen() {
   const rawBudgets = useBudgetStore((s) => s.budgets);
   const rawGoals = useSavingsStore((s) => s.goals);
 
-  // Filter all data by active account
-  const allTransactions = useMemo(() => rawTransactions.filter(t => t.accountId === accountStore.activeAccountId), [rawTransactions, accountStore.activeAccountId]);
-  const allBudgets = useMemo(() => rawBudgets.filter(b => b.accountId === accountStore.activeAccountId), [rawBudgets, accountStore.activeAccountId]);
-  const allGoals = useMemo(() => rawGoals.filter(g => g.accountId === accountStore.activeAccountId), [rawGoals, accountStore.activeAccountId]);
+  // Filter all data by active account with safe fallback for unassigned/primary transactions
+  const allTransactions = useMemo(() => 
+    rawTransactions.filter(t => 
+      t.accountId === activeAccountId || 
+      (isPrimary && (!t.accountId || !accountStore.accounts.some(a => a.id === t.accountId)))
+    ), 
+  [rawTransactions, activeAccountId, isPrimary, accountStore.accounts]);
+
+  const allBudgets = useMemo(() => 
+    rawBudgets.filter(b => 
+      b.accountId === activeAccountId || 
+      (isPrimary && (!b.accountId || !accountStore.accounts.some(a => a.id === b.accountId)))
+    ), 
+  [rawBudgets, activeAccountId, isPrimary, accountStore.accounts]);
+
+  const allGoals = useMemo(() => 
+    rawGoals.filter(g => 
+      g.accountId === activeAccountId || 
+      (isPrimary && (!g.accountId || !accountStore.accounts.some(a => a.id === g.accountId)))
+    ), 
+  [rawGoals, activeAccountId, isPrimary, accountStore.accounts]);
 
   const xp = useGamificationStore((s) => s.xp);
   const level = useGamificationStore((s) => s.level);
   const streaks = useGamificationStore((s) => s.streaks);
 
+  // Lifetime Total Balance for this account
+  const totalIncome = useMemo(() => 
+    allTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0), 
+  [allTransactions]);
+
+  const totalExpenses = useMemo(() => 
+    allTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0), 
+  [allTransactions]);
+
+  const totalBalance = totalIncome - totalExpenses;
+
+  // Monthly cashflow for the current month
   const monthlyTransactions = useMemo(() => 
     allTransactions.filter((t) => t.date.startsWith(currentMonth)), 
   [allTransactions, currentMonth]);
@@ -83,21 +114,38 @@ export default function DashboardScreen() {
     monthlyTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0), 
   [monthlyTransactions]);
 
-  const balance = monthlyIncome - monthlyExpenses;
-  
   const recentTransactions = useMemo(() => allTransactions.slice(0, 5), [allTransactions]);
   
-  const budgets = useMemo(() =>
-    allBudgets
-      .filter((b) => b.month === currentMonth)
-      .map((budget) => {
-        // Dynamically calculate spent from actual transactions (same logic as budgets.tsx)
-        const spent = monthlyTransactions
-          .filter(t => t.type === 'expense' && t.categoryId === budget.categoryId)
-          .reduce((sum, t) => sum + t.amount, 0);
-        return { ...budget, spent };
-      }),
-  [allBudgets, currentMonth, monthlyTransactions]);
+  const budgets = useMemo(() => {
+    // Current month budgets
+    const currentMonthBudgets = allBudgets.filter((b) => b.month === currentMonth);
+    const existingCategoryIds = new Set(currentMonthBudgets.map(b => b.categoryId));
+    
+    // Carry over recurring budgets from previous months if none set for this month
+    const carriedOverBudgets = allBudgets
+      .filter((b) => !b.month || b.month !== currentMonth)
+      .filter((b) => !existingCategoryIds.has(b.categoryId));
+    
+    const seenCategories = new Set(existingCategoryIds);
+    const uniqueCarriedOver: typeof allBudgets = [];
+    for (const b of carriedOverBudgets) {
+      const key = b.categoryId || b.name;
+      if (!seenCategories.has(key)) {
+        seenCategories.add(key);
+        uniqueCarriedOver.push({ ...b, month: currentMonth });
+      }
+    }
+
+    const effectiveBudgets = [...currentMonthBudgets, ...uniqueCarriedOver];
+
+    return effectiveBudgets.map((budget) => {
+      // Dynamically calculate spent from actual transactions
+      const spent = monthlyTransactions
+        .filter(t => t.type === 'expense' && (budget.categoryId ? t.categoryId === budget.categoryId : true))
+        .reduce((sum, t) => sum + t.amount, 0);
+      return { ...budget, spent };
+    });
+  }, [allBudgets, currentMonth, monthlyTransactions]);
   
   const totalSaved = useMemo(() => allGoals.reduce((sum, g) => sum + g.currentAmount, 0), [allGoals]);
   
@@ -204,11 +252,14 @@ export default function DashboardScreen() {
   
   const smartInsight = useMemo(() => {
     if (aiPersonality) {
-      return generateDashboardGreeting(balance, budgetPercentage);
+      return generateDashboardGreeting(totalBalance, budgetPercentage);
     }
     
-    if (monthlyExpenses === 0 && monthlyIncome === 0) {
+    if (allTransactions.length === 0) {
       return "Welcome to Spendly! Log your first transaction to get started.";
+    }
+    if (monthlyExpenses === 0 && monthlyIncome === 0) {
+      return `Welcome back! Your total balance is ${formatCurrency(totalBalance, currencySymbol)}. Log a transaction for this month to keep your tracking up to date!`;
     }
     if (monthlyExpenses > monthlyIncome && monthlyIncome > 0) {
       return `Warning: You have spent ${Math.round(((monthlyExpenses - monthlyIncome) / monthlyIncome) * 100)}% more than your income this month.`;
@@ -220,7 +271,7 @@ export default function DashboardScreen() {
       return `Incredible! You are actively tracking ${formatCurrency(totalSaved, currencySymbol)} in savings.`;
     }
     return `You're doing great! Keep logging your daily expenses to build your streak.`;
-  }, [monthlyExpenses, monthlyIncome, budgetPercentage, totalSaved, currencySymbol, balance, aiPersonality]);
+  }, [allTransactions.length, monthlyExpenses, monthlyIncome, budgetPercentage, totalSaved, currencySymbol, totalBalance, aiPersonality]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg.primary }]}>
@@ -307,7 +358,7 @@ export default function DashboardScreen() {
           >
             <Text style={styles.balanceLabel}>Total Balance</Text>
             <Text style={styles.balanceAmount}>
-              {formatCurrency(balance, currencySymbol)}
+              {formatCurrency(totalBalance, currencySymbol)}
             </Text>
             <View style={styles.balanceRow}>
               <View style={styles.balanceStat}>
@@ -315,7 +366,7 @@ export default function DashboardScreen() {
                   <Ionicons name="arrow-down" size={14} color="#10B981" />
                 </View>
                 <View>
-                  <Text style={styles.balanceStatLabel}>Income</Text>
+                  <Text style={styles.balanceStatLabel}>Monthly Income</Text>
                   <Text style={styles.balanceStatValue}>
                     {formatCurrency(monthlyIncome, currencySymbol, true)}
                   </Text>
@@ -327,7 +378,7 @@ export default function DashboardScreen() {
                   <Ionicons name="arrow-up" size={14} color="#F43F5E" />
                 </View>
                 <View>
-                  <Text style={styles.balanceStatLabel}>Expenses</Text>
+                  <Text style={styles.balanceStatLabel}>Monthly Expenses</Text>
                   <Text style={styles.balanceStatValue}>
                     {formatCurrency(monthlyExpenses, currencySymbol, true)}
                   </Text>

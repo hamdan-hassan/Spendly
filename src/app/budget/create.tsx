@@ -27,7 +27,8 @@ export default function CreateBudgetScreen() {
   const [categoryId, setCategoryId] = useState<string>('');
 
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
 
   const addBudget = useBudgetStore((s) => s.addBudget);
@@ -46,7 +47,7 @@ export default function CreateBudgetScreen() {
       categoryId,
       amount: parsedAmount,
       period: 'monthly',
-      accountId: accountStore.activeAccountId || '',
+      accountId: activeAccountId || '',
     });
 
     onBudgetCreated();

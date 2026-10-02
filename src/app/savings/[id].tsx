@@ -13,6 +13,7 @@ import { useThemeContext } from '@/theme';
 import { useSavingsStore } from '@/store/useSavingsStore';
 import { useTransactionStore } from '@/store/useTransactionStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { useAccountStore } from '@/store/useAccountStore';
 import { useHaptics } from '@/hooks/useHaptics';
 import { formatCurrency } from '@/utils/formatCurrency';
 import { formatRelativeDate, getDaysRemaining } from '@/utils/formatDate';
@@ -27,9 +28,14 @@ export default function SavingsGoalDetailsScreen() {
   const getGoalById = useSavingsStore((s) => s.getGoalById);
   const addContribution = useSavingsStore((s) => s.addContribution);
   const addTransaction = useTransactionStore((s) => s.addTransaction);
-  const currencySymbol = useSettingsStore((s) => s.currencySymbol);
+  
+  const accountStore = useAccountStore();
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
 
   const goal = getGoalById(id || '');
+
+  const activeAccount = accountStore.accounts.find((a) => a.id === (goal?.accountId || activeAccountId)) || accountStore.accounts[0];
+  const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
 
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -65,7 +71,7 @@ export default function SavingsGoalDetailsScreen() {
       note: note ? `Savings: ${note}` : `Contribution to ${goal.name}`,
       date: new Date().toISOString(),
       paymentMethod: 'card',
-      accountId: goal.accountId || '',
+      accountId: goal.accountId || activeAccountId || '',
     });
     
     // Check savings reminder

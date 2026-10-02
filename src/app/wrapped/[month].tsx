@@ -23,7 +23,9 @@ export default function WrappedScreen() {
 
   const allTransactions = useTransactionStore((s) => s.transactions);
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const isPrimary = !activeAccountId || activeAccountId === accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   const fallbackCurrencySymbol = useSettingsStore((s) => s.currencySymbol);
   const currencySymbol = activeAccount?.currencySymbol || fallbackCurrencySymbol;
 
@@ -33,10 +35,13 @@ export default function WrappedScreen() {
   const pressStartTime = useRef(0);
 
   const data = useMemo(() => {
-    // Filter to just the active account
-    const accountTransactions = allTransactions.filter(t => t.accountId === accountStore.activeAccountId);
+    // Filter to just the active account with fallback
+    const accountTransactions = allTransactions.filter(t => 
+      t.accountId === activeAccountId || 
+      (isPrimary && (!t.accountId || !accountStore.accounts.some(a => a.id === t.accountId)))
+    );
     return generateWrappedData(accountTransactions, month || '');
-  }, [allTransactions, accountStore.activeAccountId, month]);
+  }, [allTransactions, activeAccountId, isPrimary, accountStore.accounts, month]);
 
   const totalSlides = 5; // Intro, Numbers, Guilty Pleasure, Persona, Outro
 

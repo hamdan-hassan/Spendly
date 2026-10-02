@@ -39,7 +39,9 @@ export default function AnalyticsScreen() {
   const [period, setPeriod] = useState<Period>('month');
 
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const isPrimary = !activeAccountId || activeAccountId === accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   const currencySymbol = activeAccount?.currencySymbol || useSettingsStore((s) => s.currencySymbol);
   const currentMonth = getCurrentMonth();
   const previousMonth = getPreviousMonth(currentMonth);
@@ -48,10 +50,27 @@ export default function AnalyticsScreen() {
   const rawBudgets = useBudgetStore((s) => s.budgets);
   const rawGoals = useSavingsStore((s) => s.goals);
 
-  // Filter all data by active account
-  const allTransactions = useMemo(() => rawTransactions.filter(t => t.accountId === accountStore.activeAccountId), [rawTransactions, accountStore.activeAccountId]);
-  const allBudgets = useMemo(() => rawBudgets.filter(b => b.accountId === accountStore.activeAccountId), [rawBudgets, accountStore.activeAccountId]);
-  const allGoals = useMemo(() => rawGoals.filter(g => g.accountId === accountStore.activeAccountId), [rawGoals, accountStore.activeAccountId]);
+  // Filter all data by active account with safe fallback for unassigned/primary transactions
+  const allTransactions = useMemo(() => 
+    rawTransactions.filter(t => 
+      t.accountId === activeAccountId || 
+      (isPrimary && (!t.accountId || !accountStore.accounts.some(a => a.id === t.accountId)))
+    ), 
+  [rawTransactions, activeAccountId, isPrimary, accountStore.accounts]);
+
+  const allBudgets = useMemo(() => 
+    rawBudgets.filter(b => 
+      b.accountId === activeAccountId || 
+      (isPrimary && (!b.accountId || !accountStore.accounts.some(a => a.id === b.accountId)))
+    ), 
+  [rawBudgets, activeAccountId, isPrimary, accountStore.accounts]);
+
+  const allGoals = useMemo(() => 
+    rawGoals.filter(g => 
+      g.accountId === activeAccountId || 
+      (isPrimary && (!g.accountId || !accountStore.accounts.some(a => a.id === g.accountId)))
+    ), 
+  [rawGoals, activeAccountId, isPrimary, accountStore.accounts]);
 
   const currentMonthTransactions = useMemo(() => allTransactions.filter(t => t.date.startsWith(currentMonth)), [allTransactions, currentMonth]);
   const previousMonthTransactions = useMemo(() => allTransactions.filter(t => t.date.startsWith(previousMonth)), [allTransactions, previousMonth]);

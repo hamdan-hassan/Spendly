@@ -37,7 +37,9 @@ export default function SettingsScreen() {
 
   const settings = useSettingsStore();
   const accountStore = useAccountStore();
-  const activeAccount = accountStore.accounts.find(a => a.id === accountStore.activeAccountId);
+  const activeAccountId = accountStore.activeAccountId || accountStore.accounts[0]?.id;
+  const isPrimary = !activeAccountId || activeAccountId === accountStore.accounts[0]?.id;
+  const activeAccount = accountStore.accounts.find(a => a.id === activeAccountId) || accountStore.accounts[0];
   
   const currentCurrencyCode = activeAccount?.currencyCode || settings.currencyCode;
   const currentCurrencySymbol = activeAccount?.currencySymbol || settings.currencySymbol;
@@ -50,7 +52,12 @@ export default function SettingsScreen() {
   
   // Filter transactions for stats
   const allTransactions = useTransactionStore((s) => s.transactions);
-  const transactions = useMemo(() => allTransactions.filter(t => t.accountId === accountStore.activeAccountId), [allTransactions, accountStore.activeAccountId]);
+  const transactions = useMemo(() => 
+    allTransactions.filter(t => 
+      t.accountId === activeAccountId || 
+      (isPrimary && (!t.accountId || !accountStore.accounts.some(a => a.id === t.accountId)))
+    ), 
+  [allTransactions, activeAccountId, isPrimary, accountStore.accounts]);
   
   const addXP = useGamificationStore((s) => s.addXP);
 
@@ -638,7 +645,7 @@ export default function SettingsScreen() {
               Spendly
             </Text>
             <Text style={[styles.version, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
-              Version 1.0.1
+              Version 1.0.2
             </Text>
             <Text style={[styles.aboutText, { color: theme.colors.text.tertiary, fontFamily: 'Inter_400Regular' }]}>
               Your premium personal finance companion
